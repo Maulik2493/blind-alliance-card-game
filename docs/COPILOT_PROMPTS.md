@@ -416,3 +416,293 @@ If the debug panel shows correct index but the UI still shows wrong player:
   Confirm myPlayerId is set correctly after 'room_joined' event.
   Confirm players array index in ClientGameState matches server state.
 ```
+---
+
+# PHASE 4 — Deployment Preparation
+
+All code changes needed to make the app deployable on Railway (server)
+and Vercel (client). Apply these before doing any manual platform steps.
+
+---
+
+## Step 4.1 — Railway config file
+```
+Create packages/server/railway.json:
+
+{
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "node packages/server/dist/index.js",
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
+
+This tells Railway how to start the server after build.
+```
+
+---
+
+## Step 4.2 — Root build script for monorepo
+```
+Open the root package.json.
+Add this script alongside existing scripts:
+
+  "build:server": "npm run build --workspace=packages/core && npm run build --workspace=packages/server"
+
+This builds core first (server depends on it), then server.
+Railway will call this script during its build phase.
+
+Also add:
+  "build:client": "npm run build --workspace=packages/core && npm run build --workspace=packages/client"
+
+Vercel will call this during its build phase.
+```
+
+---
+
+## Step 4.3 — Server: production-ready CORS and PORT
+```
+Open packages/server/src/index.ts.
+
+1. Make sure PORT comes from environment variable:
+     const PORT = process.env.PORT || 3001
+
+2. Make sure CORS origin comes from environment variable:
+     const io = new Server(httpServer, {
+       cors: {
+         origin: process.env.CLIENT_URL || 'http://localhost:5173',
+         methods: ['GET', 'POST']
+       }
+     })
+
+3. Make sure the server listens on 0.0.0.0 (required for Railway):
+     httpServer.listen(PORT, '0.0.0.0', () => {
+       console.log(`Blind Alliance server running on port ${PORT}`)
+     })
+
+Do not hardcode any URLs or port numbers anywhere in this file.
+```
+
+---
+
+## Step 4.4 — Server: graceful shutdown
+```
+Open packages/server/src/index.ts.
+
+Add graceful shutdown handling at the bottom of the file,
+after the server listen call:
+
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM received. Shutting down gracefully.')
+    httpServer.close(() => {
+      console.log('Server closed.')
+      process.exit(0)
+    })
+  })
+
+  process.on('SIGINT', () => {
+    console.log('SIGINT received. Shutting down gracefully.')
+    httpServer.close(() => {
+      console.log('Server closed.')
+      process.exit(0)
+    })
+  })
+
+Railway sends SIGTERM before stopping a container.
+This ensures active games get a clean shutdown signal
+rather than being cut off abruptly.
+```
+
+---
+
+## Step 4.5 — Server: package.json scripts
+```
+Open packages/server/package.json.
+Ensure all three scripts exist exactly as follows:
+
+  "scripts": {
+    "dev":   "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  }
+
+"start" must run the compiled JS from dist/, not ts-node.
+Railway runs "start" in production after "build" completes.
+```
+
+---
+
+## Step 4.6 — Server: tsconfig output path
+```
+Open packages/server/tsconfig.json.
+Confirm outDir is set to "dist":
+
+  {
+    "compilerOptions": {
+      "outDir": "dist",
+      "rootDir": "src",
+      ...
+    }
+  }
+
+After npm run build --workspace=packages/server, the compiled
+entry point must exist at packages/server/dist/index.js.
+Run the build locally and confirm this file exists before deploying.
+```
+
+---
+
+## Step 4.7 — Client: environment variable for server URL
+```
+Open packages/client/src/socket.ts.
+
+Make sure the server URL comes from the Vite environment variable:
+
+  import { io } from 'socket.io-client'
+
+  export const socket = io(
+    import.meta.env.VITE_SERVER_URL || 'http://localhost:3001',
+    { autoConnect: false }
+  )
+
+  export const connectSocket = () => socket.connect()
+  export const disconnectSocket = () => socket.disconnect()
+
+VITE_SERVER_URL will be set on Vercel as an environment variable.
+During local dev it falls back to localhost:3001.
+Never hardcode the production server URL in source code.
+```
+
+---
+
+## Step 4.8 — Client: vite.config.ts production settings
+```
+Open packages/client/vite.config.ts.
+Ensure it looks like this:
+
+  import { defineConfig } from 'vite'
+  import react from '@vitejs/plugin-react'
+  import path from 'path'
+
+  export default defineConfig({
+    plugins: [react()],
+    resolve: {
+      alias: {
+        '@blind-alliance/core': path.resolve(__dirname, '../core/src/index.ts')
+      }
+    },
+    build: {
+      outDir: 'dist',
+      sourcemap: false   ← disable sourcemaps in production build
+    }
+  })
+
+The alias lets Vite resolve the core package directly from TypeScript
+source without requiring a separate core build step during client build.
+sourcemap: false keeps the production bundle smaller.
+```
+
+---
+
+## Step 4.9 — Client: vercel.json for SPA routing
+```
+Create packages/client/vercel.json:
+
+  {
+    "rewrites": [
+      { "source": "/(.*)", "destination": "/index.html" }
+    ]
+  }
+
+This ensures all routes (including direct URL access and page refresh)
+are handled by the React app rather than returning a 404 from Vercel.
+Essential for any React SPA deployed on Vercel.
+```
+
+---
+
+## Step 4.10 — Add .gitignore entries
+```
+Open the root .gitignore (or create one if it doesn't exist).
+Ensure these entries are present:
+
+  # Build outputs
+  packages/core/dist
+  packages/server/dist
+  packages/client/dist
+
+  # Dependencies
+  node_modules
+  packages/*/node_modules
+
+  # Environment files
+  .env
+  .env.local
+  packages/server/.env
+  packages/client/.env.local
+
+  # Railway
+  .railway
+
+  # OS
+  .DS_Store
+  Thumbs.db
+
+Never commit dist/ folders or .env files to the repo.
+Railway and Vercel build from source — they don't need pre-built files.
+```
+
+---
+
+## Step 4.11 — Local production build verification
+```
+Before deploying, verify the production build works locally.
+
+Run these commands from the repo root in order:
+
+  1. npm run build:server
+     Confirm: packages/server/dist/index.js exists
+     Confirm: packages/core/dist/index.js exists
+
+  2. node packages/server/dist/index.js
+     Confirm: "Blind Alliance server running on port 3001" appears
+     Ctrl+C to stop
+
+  3. npm run build:client
+     Confirm: packages/client/dist/index.html exists
+
+  4. npm run preview --workspace=packages/client
+     Opens a local preview of the production client build.
+     Open browser, confirm the app loads correctly.
+
+Fix any build errors before proceeding to manual deployment steps.
+All four checks must pass cleanly.
+```
+
+---
+
+## Step 4.12 — Environment variable documentation
+```
+Create a file packages/server/.env.example:
+
+  # Port the server listens on (Railway sets this automatically)
+  PORT=3001
+
+  # The deployed Vercel client URL (set after Vercel deployment)
+  CLIENT_URL=https://your-app.vercel.app
+
+  # Node environment
+  NODE_ENV=production
+
+Create a file packages/client/.env.example:
+
+  # The deployed Railway server URL (set after Railway deployment)
+  VITE_SERVER_URL=https://your-server.up.railway.app
+
+Commit both .env.example files to the repo.
+These are documentation only — the real .env files are never committed.
+teammates and future developers use these as a reference for
+which environment variables need to be set on each platform.
+```

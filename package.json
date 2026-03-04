@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "npm run dev --workspace=packages/client & npm run dev --workspace=packages/server",
     "build": "npm run build --workspace=packages/core && npm run build --workspace=packages/server && npm run build --workspace=packages/client",
+    "build:server": "npm run build --workspace=packages/core && npm run build --workspace=packages/server",
+    "build:client": "npm run build --workspace=packages/core && npm run build --workspace=packages/client",
     "test": "npm run test --workspace=packages/core",
     "test:watch": "npm run test:watch --workspace=packages/core"
   },

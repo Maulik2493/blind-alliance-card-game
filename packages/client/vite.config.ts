@@ -10,4 +10,8 @@ export default defineConfig({
       '@blind-alliance/core': path.resolve(__dirname, '../core/src/index.ts'),
     },
   },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+  },
 });

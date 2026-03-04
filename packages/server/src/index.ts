@@ -39,6 +39,22 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => handleDisconnect(socket, io));
 });
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Blind Alliance server running on port ${PORT}`);
+});
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received. Shutting down gracefully.');
+  httpServer.close(() => {
+    console.log('Server closed.');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received. Shutting down gracefully.');
+  httpServer.close(() => {
+    console.log('Server closed.');
+    process.exit(0);
+  });
 });
