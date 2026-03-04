@@ -33,7 +33,6 @@ table is blind to who's truly on whose side.
 | `GAME_RULES.md`       | Complete rules reference                        |
 | `GAME_DESIGN.md`      | Data models, entities, state definitions        |
 | `ARCHITECTURE.md`     | Suggested code structure and module breakdown   |
-| `COPILOT_PROMPTS.md`  | Ready-to-use GitHub Copilot prompts             |
 
 ## Getting Started (Development)
 
