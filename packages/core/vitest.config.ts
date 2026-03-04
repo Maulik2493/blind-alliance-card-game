@@ -4,9 +4,7 @@ import path from 'path';
 export default defineConfig({
   resolve: {
     alias: {
-      '@core': path.resolve(__dirname, 'src/core'),
-      '@store': path.resolve(__dirname, 'src/store'),
-      '@components': path.resolve(__dirname, 'src/components'),
+      '@blind-alliance/core': path.resolve(__dirname, 'src/index.ts'),
     },
   },
   test: {

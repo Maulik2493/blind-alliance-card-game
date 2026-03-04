@@ -1,10 +1,10 @@
 import { create } from 'zustand';
-import type { Card, Suit } from '../core/card';
-import type { TeammateCondition } from '../core/conditions';
-import type { AvailableConditionCard } from '../core/conditionCards';
-import type { TrickPlay } from '../core/trick';
-import type { Player } from '../core/player';
-import type { GameState } from '../core/gameState';
+import type { Card, Suit } from '@blind-alliance/core';
+import type { TeammateCondition } from '@blind-alliance/core';
+import type { AvailableConditionCard } from '@blind-alliance/core';
+import type { TrickPlay } from '@blind-alliance/core';
+import type { Player } from '@blind-alliance/core';
+import type { GameState } from '@blind-alliance/core';
 import {
   createInitialGameState,
   dealCards,
@@ -13,9 +13,9 @@ import {
   selectTrump as coreSelectTrump,
   setTeammateConditions as coreSetTeammateConditions,
   playCard as corePlayCard,
-} from '../core/gameState';
-import { getValidCards } from '../core/trick';
-import { getAvailableConditionCards } from '../core/conditionCards';
+} from '@blind-alliance/core';
+import { getValidCards } from '@blind-alliance/core';
+import { getAvailableConditionCards } from '@blind-alliance/core';
 
 // ─── Store Interface ─────────────────────────────────────────────────────────
 

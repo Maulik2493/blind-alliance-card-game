@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
-import type { AvailableConditionCard } from '../../core/conditionCards';
-import type { TeammateCondition, CardRevealCondition, FirstTrickWinCondition } from '../../core/conditions';
-import type { Suit, Rank } from '../../core/card';
+import type { AvailableConditionCard } from '@blind-alliance/core';
+import type { TeammateCondition, CardRevealCondition, FirstTrickWinCondition } from '@blind-alliance/core';
+import type { Suit, Rank } from '@blind-alliance/core';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 

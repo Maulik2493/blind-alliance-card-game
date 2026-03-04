@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   checkCardPlayConditions,
   resolveFirstTrickWin,
-} from '../../src/core/conditions';
-import type { TeammateCondition, CardRevealCondition, FirstTrickWinCondition } from '../../src/core/conditions';
-import type { Card } from '../../src/core/card';
+} from '@blind-alliance/core';
+import type { TeammateCondition, CardRevealCondition, FirstTrickWinCondition } from '@blind-alliance/core';
+import type { Card } from '@blind-alliance/core';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

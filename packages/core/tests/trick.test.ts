@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { resolveTrick } from '../../src/core/trick';
-import type { Trick } from '../../src/core/trick';
-import type { Card, Suit } from '../../src/core/card';
+import { resolveTrick } from '@blind-alliance/core';
+import type { Trick } from '@blind-alliance/core';
+import type { Card, Suit } from '@blind-alliance/core';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

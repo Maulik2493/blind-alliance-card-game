@@ -6,9 +6,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@core': path.resolve(__dirname, 'src/core'),
-      '@store': path.resolve(__dirname, 'src/store'),
-      '@components': path.resolve(__dirname, 'src/components'),
+      '@blind-alliance/core': path.resolve(__dirname, '../core/src/index.ts'),
     },
   },
 });

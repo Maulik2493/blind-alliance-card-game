@@ -16,12 +16,10 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
-    "baseUrl": ".",
     "paths": {
-      "@core/*": ["src/core/*"],
-      "@store/*": ["src/store/*"],
-      "@components/*": ["src/components/*"]
+      "@blind-alliance/core": ["../core/src/index.ts"]
     }
   },
-  "include": ["src", "tests"]
+  "include": ["src"],
+  "references": [{ "path": "../core" }]
 }

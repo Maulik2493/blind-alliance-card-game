@@ -95,6 +95,61 @@ export function initGame(playerNames: string[]): GameState {
 /** Backward-compat alias used by store */
 export const createInitialGameState = initGame;
 
+// ─── Lobby ──────────────────────────────────────────────────────────────────
+
+export function addPlayerToLobby(state: GameState, playerId: string, playerName: string): GameState {
+  if (state.phase !== 'lobby') {
+    throw new Error('Cannot add players outside of lobby phase');
+  }
+  if (state.players.length >= 10) {
+    throw new Error('Room is full (max 10 players)');
+  }
+  if (state.players.some((p) => p.id === playerId)) {
+    throw new Error('Player already in lobby');
+  }
+
+  const newPlayers = [
+    ...state.players,
+    {
+      id: playerId,
+      name: playerName,
+      hand: [] as Card[],
+      collectedCards: [] as Card[],
+      team: 'unknown' as const,
+      isRevealed: false,
+    },
+  ];
+
+  const newDeckCount: 1 | 2 = newPlayers.length <= 5 ? 1 : 2;
+
+  return {
+    ...state,
+    players: newPlayers,
+    deckCount: newDeckCount,
+    totalPoints: newDeckCount === 1 ? 250 : 500,
+    minBid: getMinBid(newDeckCount),
+    maxTeammateCount: getMaxTeammateCount(newPlayers.length),
+  };
+}
+
+export function removePlayerFromLobby(state: GameState, playerId: string): GameState {
+  if (state.phase !== 'lobby') {
+    throw new Error('Cannot remove players outside of lobby phase');
+  }
+
+  const newPlayers = state.players.filter((p) => p.id !== playerId);
+  const newDeckCount: 1 | 2 = newPlayers.length <= 5 ? 1 : 2;
+
+  return {
+    ...state,
+    players: newPlayers,
+    deckCount: newDeckCount,
+    totalPoints: newDeckCount === 1 ? 250 : 500,
+    minBid: getMinBid(newDeckCount),
+    maxTeammateCount: getMaxTeammateCount(newPlayers.length),
+  };
+}
+
 // ─── Deal Cards ──────────────────────────────────────────────────────────────
 
 export function dealCards(state: GameState): GameState {
@@ -142,10 +197,12 @@ export function placeBid(state: GameState, playerId: string, amount: number): Ga
   }
 
   const newBid: Bid = { playerId, amount };
+  const nextPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
   return {
     ...state,
     bids: [...state.bids, newBid],
     highestBid: newBid,
+    currentPlayerIndex: nextPlayerIndex,
   };
 }
 
@@ -153,6 +210,7 @@ export function passBid(state: GameState, playerId: string): GameState {
   const newBids = [...state.bids, { playerId, amount: 0 }]; // 0 = pass
   const passCount = newBids.filter((b) => b.amount === 0).length;
   const allPassed = passCount === state.players.length;
+  const nextPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
 
   // If everyone passed with no real bid → re-deal
   if (allPassed && state.highestBid === null) {
@@ -181,6 +239,7 @@ export function passBid(state: GameState, playerId: string): GameState {
   return {
     ...state,
     bids: newBids,
+    currentPlayerIndex: nextPlayerIndex,
   };
 }
 

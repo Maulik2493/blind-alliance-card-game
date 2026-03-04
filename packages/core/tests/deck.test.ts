@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDeck, removeBalancingCards } from '../../src/core/deck';
+import { buildDeck, removeBalancingCards } from '@blind-alliance/core';
 
 // ─── removeBalancingCards ────────────────────────────────────────────────────
 
