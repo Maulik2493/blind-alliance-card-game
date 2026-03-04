@@ -8,6 +8,11 @@ import { buildGameDeck } from './deck';
 import { isValidBid, getMinBid, getMaxTeammateCount } from './bidding';
 import { computeTeamScores, determineWinner } from './scoring';
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+export const MAX_PLAYERS = 13;
+export const MIN_PLAYERS = 3;
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type GamePhase =
@@ -101,8 +106,8 @@ export function addPlayerToLobby(state: GameState, playerId: string, playerName:
   if (state.phase !== 'lobby') {
     throw new Error('Cannot add players outside of lobby phase');
   }
-  if (state.players.length >= 10) {
-    throw new Error('Room is full (max 10 players)');
+  if (state.players.length >= MAX_PLAYERS) {
+    throw new Error(`Room is full (max ${MAX_PLAYERS} players)`);
   }
   if (state.players.some((p) => p.id === playerId)) {
     throw new Error('Player already in lobby');

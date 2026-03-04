@@ -139,6 +139,11 @@ export function LobbyScreen() {
                 Minimum 3 players required
               </p>
             )}
+            {players.length >= 13 && (
+              <p className="text-xs text-yellow-500 text-center mt-2">
+                Room is full (max 13 players)
+              </p>
+            )}
           </div>
         ) : (
           <p className="text-center text-gray-400">

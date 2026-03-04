@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { MAX_PLAYERS } from '@blind-alliance/core';
 import { GameRoom } from './GameRoom';
 
 export class RoomManager {
@@ -23,8 +24,8 @@ export class RoomManager {
     if (room.state.phase !== 'lobby') {
       throw new Error('Game has already started');
     }
-    if (room.state.players.length >= 10) {
-      throw new Error('Room is full (max 10 players)');
+    if (room.state.players.length >= MAX_PLAYERS) {
+      throw new Error(`Room is full (max ${MAX_PLAYERS} players)`);
     }
     room.addPlayer(playerId, playerName);
     return room;
