@@ -1,582 +1,698 @@
-# Blind Alliance — GitHub Copilot Prompts
+# Blind Alliance — Copilot Prompts: Phase 3 (Frontend UI)
 
-## Overview of Phases
-- **Phase 0** — Migrate to monorepo (npm workspaces)
-- **Phase 1** — Core logic ✅ DONE
-- **Phase 2** — Backend server (Node.js + TypeScript + Socket.IO)
-- **Phase 3** — Frontend client (React + Vite + Zustand)
+## Context
+- Each browser tab = one player
+- Tailwind CSS is already set up
+- UI goal: functional and minimal — enough to test all game scenarios
+- Debug aids: game log panel + all-players state panel
+- gameStore.ts currently uses local core logic — Phase 3 replaces it with
+  a socket-driven store while preserving the same method names
 
-Work through prompts in order. Each step builds on the previous.
-Reference `GAME_DESIGN.md` and `copilot-instructions.md` for all types and rules.
+All files go inside `packages/client/src/` unless stated otherwise.
 
 ---
 
-# PHASE 0 — Monorepo Migration
-
-## Step 0.1 — Root package.json
+## Step 3.1 — Socket Service
 ```
-Replace the current root package.json with a monorepo root package.json.
+Create packages/client/src/socket.ts
 
-The new root package.json should:
-- Set "name": "blind-alliance-monorepo"
-- Set "private": true
-- Add "workspaces": ["packages/core", "packages/server", "packages/client"]
-- Move NO dependencies here — root has no dependencies of its own
-- Add these root-level scripts:
-    "dev": "npm run dev --workspace=packages/client & npm run dev --workspace=packages/server"
-    "build": "npm run build --workspace=packages/core && npm run build --workspace=packages/server && npm run build --workspace=packages/client"
-    "test": "npm run test --workspace=packages/core"
-    "test:watch": "npm run test:watch --workspace=packages/core"
-- Keep "engines": { "node": ">=18" }
-```
+This is a singleton Socket.IO client instance shared across the entire app.
 
-## Step 0.2 — Create packages/core
-```
-Create the packages/core/ package by doing the following:
+1. Import { io } from 'socket.io-client'
+2. Create and export a single socket instance:
+     export const socket = io(
+       import.meta.env.VITE_SERVER_URL || 'http://localhost:3001',
+       { autoConnect: false }   ← we connect manually after player enters name
+     )
+3. Export a helper: export const connectSocket = () => socket.connect()
+4. Export a helper: export const disconnectSocket = () => socket.disconnect()
 
-1. Create folder packages/core/src/
-2. Move all files from src/core/ into packages/core/src/
-   Files to move: card.ts, deck.ts, bidding.ts, conditions.ts,
-                  trick.ts, scoring.ts, gameState.ts, conditionCards.ts
-3. Move the existing tests/core/ folder to packages/core/tests/
-4. Create packages/core/package.json:
-   {
-     "name": "@blind-alliance/core",
-     "version": "1.0.0",
-     "private": true,
-     "main": "dist/index.js",
-     "types": "dist/index.d.ts",
-     "scripts": {
-       "build": "tsc",
-       "test": "vitest run",
-       "test:watch": "vitest"
-     },
-     "devDependencies": {
-       "typescript": "^5.0.0",
-       "vitest": "^1.0.0"
-     }
-   }
-5. Create packages/core/tsconfig.json:
-   {
-     "compilerOptions": {
-       "target": "ES2020",
-       "module": "CommonJS",
-       "lib": ["ES2020"],
-       "outDir": "dist",
-       "rootDir": "src",
-       "strict": true,
-       "declaration": true,
-       "declarationMap": true,
-       "sourceMap": true,
-       "esModuleInterop": true
-     },
-     "include": ["src"],
-     "exclude": ["node_modules", "dist", "tests"]
-   }
-6. Create packages/core/src/index.ts that re-exports everything:
-   export * from './card';
-   export * from './deck';
-   export * from './bidding';
-   export * from './conditions';
-   export * from './conditionCards';
-   export * from './trick';
-   export * from './scoring';
-   export * from './gameState';
-7. Update all internal imports inside packages/core/src/ files
-   to use relative paths (e.g. import { Card } from './card')
-8. Update all test files in packages/core/tests/ to import from
-   '@blind-alliance/core' instead of relative paths
-```
-
-## Step 0.3 — Create packages/client
-```
-Create the packages/client/ package from the existing Vite React app.
-
-1. Create folder packages/client/
-2. Move these files/folders from the project root into packages/client/:
-   - src/ (everything except src/core/ which is already moved)
-   - index.html
-   - vite.config.ts
-   - tsconfig.json (rename to tsconfig.client.json first if there's a conflict)
-3. Create packages/client/package.json:
-   {
-     "name": "@blind-alliance/client",
-     "version": "1.0.0",
-     "private": true,
-     "scripts": {
-       "dev": "vite",
-       "build": "tsc && vite build",
-       "preview": "vite preview"
-     },
-     "dependencies": {
-       "@blind-alliance/core": "*",
-       "react": "^18.0.0",
-       "react-dom": "^18.0.0",
-       "zustand": "^4.0.0",
-       "socket.io-client": "^4.7.0"
-     },
-     "devDependencies": {
-       "@vitejs/plugin-react": "^4.0.0",
-       "typescript": "^5.0.0",
-       "vite": "^5.0.0",
-       "@types/react": "^18.0.0",
-       "@types/react-dom": "^18.0.0"
-     }
-   }
-4. Update packages/client/vite.config.ts to resolve the workspace package:
-   import { defineConfig } from 'vite'
-   import react from '@vitejs/plugin-react'
-   export default defineConfig({
-     plugins: [react()],
-     resolve: {
-       alias: {
-         '@blind-alliance/core': '../core/src/index.ts'
-       }
-     }
-   })
-   This alias lets Vite resolve the core package directly from source
-   during development without needing to build core first.
-5. Update all imports in packages/client/src/ that previously imported
-   from relative paths like '../../core/...' or '../core/...'
-   to now import from '@blind-alliance/core'
-6. Create packages/client/tsconfig.json:
-   {
-     "compilerOptions": {
-       "target": "ES2020",
-       "lib": ["ES2020", "DOM", "DOM.Iterable"],
-       "module": "ESNext",
-       "moduleResolution": "bundler",
-       "jsx": "react-jsx",
-       "strict": true,
-       "paths": {
-         "@blind-alliance/core": ["../core/src/index.ts"]
-       }
-     },
-     "include": ["src"],
-     "references": [{ "path": "../core" }]
-   }
-```
-
-## Step 0.4 — Create packages/server scaffold
-```
-Create an empty packages/server/ package ready for Phase 2.
-
-1. Create folder packages/server/src/
-2. Create packages/server/package.json:
-   {
-     "name": "@blind-alliance/server",
-     "version": "1.0.0",
-     "private": true,
-     "main": "dist/index.js",
-     "scripts": {
-       "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-       "build": "tsc",
-       "start": "node dist/index.js"
-     },
-     "dependencies": {
-       "@blind-alliance/core": "*",
-       "express": "^4.18.0",
-       "socket.io": "^4.7.0",
-       "cors": "^2.8.5",
-       "uuid": "^9.0.0"
-     },
-     "devDependencies": {
-       "typescript": "^5.0.0",
-       "ts-node-dev": "^2.0.0",
-       "@types/express": "^4.17.0",
-       "@types/cors": "^2.8.0",
-       "@types/uuid": "^9.0.0"
-     }
-   }
-3. Create packages/server/tsconfig.json:
-   {
-     "compilerOptions": {
-       "target": "ES2020",
-       "module": "CommonJS",
-       "lib": ["ES2020"],
-       "outDir": "dist",
-       "rootDir": "src",
-       "strict": true,
-       "esModuleInterop": true,
-       "resolveJsonModule": true,
-       "sourceMap": true
-     },
-     "include": ["src"],
-     "exclude": ["node_modules", "dist"]
-   }
-4. Create a placeholder packages/server/src/index.ts:
-   console.log('Blind Alliance server - not yet implemented')
-```
-
-## Step 0.5 — Install and Verify
-```
-Run the following in order from the repo root and fix any errors before proceeding:
-
-1. npm install
-   This links all workspace packages together. @blind-alliance/core will be
-   symlinked into node_modules for both server and client automatically.
-
-2. npm run build --workspace=packages/core
-   Should compile core to packages/core/dist/ with no errors.
-
-3. npm test
-   All existing core tests must still pass. If any imports are broken,
-   fix them in packages/core/tests/ to import from '@blind-alliance/core'.
-
-4. npm run dev --workspace=packages/client
-   Vite dev server should start and the React app should load in the browser.
-   Fix any import path errors in client src files.
-
-Do NOT proceed to Phase 2 until all three checks above pass cleanly.
+No logic here — just the socket instance and connection helpers.
+This file is imported by the store and nowhere else.
 ```
 
 ---
 
-# PHASE 2 — Backend Server
-
-All files go inside `packages/server/src/` unless stated otherwise.
-
-## Step 2.1 — Socket Event Types (Shared Contract)
+## Step 3.2 — Replace gameStore.ts
 ```
-Create packages/server/src/events.ts
-
-This file defines the complete Socket.IO event contract between client and server.
-Both server and client will reference these types.
-
-Define two interfaces — one for events the CLIENT emits, one for events the SERVER emits:
-
-CLIENT → SERVER events (ServerToClientEvents in Socket.IO terms are reversed here):
-  'join_room':        { playerName: string, roomId?: string }
-                      If roomId is omitted, server creates a new room.
-  'start_game':       {} — host triggers game start
-  'place_bid':        { amount: number }
-  'pass_bid':         {}
-  'select_trump':     { suit: Suit }
-  'set_conditions':   { conditions: TeammateCondition[] }
-  'play_card':        { cardId: string }
-                      cardId format: "suit-rank-deckIndex" e.g. "spades-A-0"
-
-SERVER → CLIENT events:
-  'room_joined':      { roomId: string, playerId: string, players: PublicPlayer[] }
-  'player_joined':    { players: PublicPlayer[] }
-  'game_started':     { hand: Card[], phase: GamePhase }
-  'state_update':     { state: ClientGameState }
-                      ClientGameState is the sanitized view — no other players' hands
-  'action_error':     { message: string }
-                      Sent only to the player who made the invalid action
-  'game_over':        { winner: 'bidder_team' | 'opposition_team', summary: ScoreSummary }
-
-Also define:
-  PublicPlayer: { id: string, name: string, team: 'bidder'|'opposition'|'unknown',
-                  isRevealed: boolean, cardCount: number }
-                  cardCount replaces hand — other players' actual cards are never sent
-
-  ClientGameState: Full GameState but with:
-    - players: PublicPlayer[]     ← no hands exposed
-    - myHand: Card[]              ← only this player's own cards
-    - All other GameState fields intact
-
-Export all types. This file is imported by both server event handlers and later by the client.
-```
-
-## Step 2.2 — RoomManager
-```
-Create packages/server/src/RoomManager.ts
-
-RoomManager is a singleton that creates, stores, and destroys game rooms.
-
-Implement class RoomManager:
-
-  Private state:
-    rooms: Map<string, GameRoom>
-
-  Methods:
-    createRoom(hostId: string, hostName: string): GameRoom
-      Generate a short unique roomId (6 uppercase alphanumeric chars using uuid).
-      Create a new GameRoom(roomId, hostId, hostName).
-      Store in rooms map.
-      Return the room.
-
-    getRoom(roomId: string): GameRoom | undefined
-
-    joinRoom(roomId: string, playerId: string, playerName: string): GameRoom
-      Throws if room not found.
-      Throws if room is not in 'lobby' phase.
-      Throws if player count is already 10.
-      Calls room.addPlayer(playerId, playerName).
-      Returns the room.
-
-    destroyRoom(roomId: string): void
-      Removes room from map.
-
-    getRoomByPlayerId(playerId: string): GameRoom | undefined
-      Iterates rooms to find one containing this playerId.
-
-Export a single instance: export const roomManager = new RoomManager()
-```
-
-## Step 2.3 — GameRoom
-```
-Create packages/server/src/GameRoom.ts
-Import from '@blind-alliance/core' and events.ts.
-
-GameRoom holds the authoritative GameState for one game session.
-
-Implement class GameRoom:
-
-  Properties:
-    roomId: string
-    hostId: string
-    state: GameState
-    playerSocketMap: Map<string, string>  // playerId → socketId
-
-  Constructor(roomId, hostPlayerId, hostPlayerName):
-    Initialize state via initGame([hostPlayerName]) from core.
-    Add hostPlayerId to playerSocketMap.
-
-  Methods:
-    addPlayer(playerId: string, playerName: string): void
-      Throws if state.phase !== 'lobby'.
-      Adds player to state via addPlayerToLobby() from core.
-      Stores in playerSocketMap.
-
-    startGame(): void
-      Throws if state.phase !== 'lobby'.
-      Throws if player count < 3.
-      Calls dealCards(state) from core, updates this.state.
-
-    applyBid(playerId: string, amount: number): void
-      Validates it is this player's turn to bid.
-      Calls placeBid(state, playerId, amount) from core.
-      Updates this.state.
-
-    applyPass(playerId: string): void
-      Calls passBid(state, playerId) from core.
-      Updates this.state.
-
-    applyTrumpSelect(playerId: string, suit: Suit): void
-      Validates playerId === state.bidderId.
-      Calls selectTrump(state, suit) from core.
-      Updates this.state.
-
-    applySetConditions(playerId: string, conditions: TeammateCondition[]): void
-      Validates playerId === state.bidderId.
-      Validates conditions.length === state.maxTeammateCount.
-      Calls setTeammateConditions(state, conditions) from core.
-      Updates this.state.
-
-    applyPlayCard(playerId: string, cardId: string): void
-      Validates it is this player's turn (currentPlayerIndex).
-      Parses cardId into { suit, rank, deckIndex }.
-      Finds card in player's hand.
-      Validates card is in getValidCards(hand, ledSuit, trumpSuit) from core.
-      Calls playCard(state, playerId, card) from core.
-      Updates this.state.
-
-    getSanitizedStateFor(playerId: string): ClientGameState
-      Returns full state but:
-        - players array replaced with PublicPlayer[] (no hands)
-        - myHand set to this player's actual hand
-      This is what gets broadcast to each individual player.
-
-    getPublicPlayers(): PublicPlayer[]
-      Maps state.players to PublicPlayer shape.
-```
-
-## Step 2.4 — Socket Event Handlers
-```
-Create packages/server/src/events/onJoin.ts
-
-Handle the 'join_room' event.
-
-Function: handleJoinRoom(socket: Socket, io: Server, data: { playerName, roomId? })
-
-Logic:
-  If data.roomId is provided:
-    room = roomManager.joinRoom(data.roomId, socket.id, data.playerName)
-    socket.join(room.roomId)
-    emit 'room_joined' to this socket: { roomId, playerId: socket.id, players: room.getPublicPlayers() }
-    broadcast 'player_joined' to others in room: { players: room.getPublicPlayers() }
-  Else:
-    room = roomManager.createRoom(socket.id, data.playerName)
-    socket.join(room.roomId)
-    emit 'room_joined' to this socket: { roomId: room.roomId, playerId: socket.id, players: room.getPublicPlayers() }
-
-  Wrap all in try/catch — on error emit 'action_error' to socket only.
-```
-```
-Create packages/server/src/events/onStartGame.ts
-
-Handle the 'start_game' event.
-
-Function: handleStartGame(socket: Socket, io: Server)
-
-Logic:
-  room = roomManager.getRoomByPlayerId(socket.id)
-  Validate room exists and socket.id === room.hostId.
-  room.startGame()
-  For each player in room.state.players:
-    Find their socketId via room.playerSocketMap
-    Emit 'game_started' directly to that socket:
-      { hand: player.hand, phase: room.state.phase }
-  Also broadcast initial 'state_update' to each player individually
-  using room.getSanitizedStateFor(playerId).
-
-  Wrap in try/catch — on error emit 'action_error' to socket only.
-```
-```
-Create packages/server/src/events/onBid.ts
-
-Handle 'place_bid' and 'pass_bid' events.
-
-Function: handlePlaceBid(socket, io, data: { amount })
-  room = roomManager.getRoomByPlayerId(socket.id)
-  room.applyBid(socket.id, data.amount)
-  broadcastStateUpdate(io, room)
-
-Function: handlePassBid(socket, io)
-  room = roomManager.getRoomByPlayerId(socket.id)
-  room.applyPass(socket.id)
-  broadcastStateUpdate(io, room)
-
-Wrap both in try/catch.
-
-Helper function broadcastStateUpdate(io, room):
-  For each player in room.state.players:
-    Get their socketId from room.playerSocketMap
-    io.to(socketId).emit('state_update', room.getSanitizedStateFor(player.id))
-  This must be called after EVERY state-changing action.
-  Export it — it will be reused in all other handlers.
-```
-```
-Create packages/server/src/events/onTrumpSelect.ts
-
-Handle 'select_trump' event.
-
-Function: handleSelectTrump(socket, io, data: { suit })
-  room = roomManager.getRoomByPlayerId(socket.id)
-  room.applyTrumpSelect(socket.id, data.suit)
-  broadcastStateUpdate(io, room)
-  Wrap in try/catch.
-```
-```
-Create packages/server/src/events/onSetConditions.ts
-
-Handle 'set_conditions' event.
-
-Function: handleSetConditions(socket, io, data: { conditions })
-  room = roomManager.getRoomByPlayerId(socket.id)
-  room.applySetConditions(socket.id, data.conditions)
-  broadcastStateUpdate(io, room)
-  Wrap in try/catch.
-```
-```
-Create packages/server/src/events/onPlayCard.ts
-
-Handle 'play_card' event.
-
-Function: handlePlayCard(socket, io, data: { cardId })
-  room = roomManager.getRoomByPlayerId(socket.id)
-  room.applyPlayCard(socket.id, data.cardId)
-
-  If room.state.phase === 'finished':
-    broadcastStateUpdate(io, room)
-    For each player emit 'game_over':
-      { winner: room.state.winner, summary: buildScoreSummary(room.state) }
-    roomManager.destroyRoom(room.roomId)
-  Else:
-    broadcastStateUpdate(io, room)
-
-  Wrap in try/catch.
-```
-```
-Create packages/server/src/events/onDisconnect.ts
-
-Handle 'disconnect' event.
-
-Function: handleDisconnect(socket, io)
-  room = roomManager.getRoomByPlayerId(socket.id)
-  If no room found: return (player was in lobby or never joined)
-
-  If room.state.phase === 'lobby':
-    Remove player from room.
-    If room is now empty: roomManager.destroyRoom(room.roomId)
-    Else broadcast updated player list.
-  Else (game in progress):
-    Broadcast 'action_error' to all in room:
-      { message: 'A player disconnected. Game paused.' }
-    Mark player as disconnected in room state.
-    (Reconnection handling is a future enhancement — for now just notify.)
-```
-
-## Step 2.5 — Server Entry Point
-```
-Create packages/server/src/index.ts
-
-Set up the Express + Socket.IO server.
-
-1. Create Express app and HTTP server.
-2. Attach Socket.IO with CORS config:
-   origin: process.env.CLIENT_URL || 'http://localhost:5173'
-   methods: ['GET', 'POST']
-3. On socket 'connection':
-   Register all event handlers by calling:
-     socket.on('join_room',      (data) => handleJoinRoom(socket, io, data))
-     socket.on('start_game',     ()     => handleStartGame(socket, io))
-     socket.on('place_bid',      (data) => handlePlaceBid(socket, io, data))
-     socket.on('pass_bid',       ()     => handlePassBid(socket, io))
-     socket.on('select_trump',   (data) => handleSelectTrump(socket, io, data))
-     socket.on('set_conditions', (data) => handleSetConditions(socket, io, data))
-     socket.on('play_card',      (data) => handlePlayCard(socket, io, data))
-     socket.on('disconnect',     ()     => handleDisconnect(socket, io))
-4. Listen on process.env.PORT || 3001
-5. Log: 'Blind Alliance server running on port 3001'
-
-Create packages/server/.env.example:
-  PORT=3001
-  CLIENT_URL=http://localhost:5173
-```
-
-## Step 2.6 — Verify Server Works End-to-End
-```
-Before building the frontend, verify the server handles a full game via Socket.IO directly.
-
-Create packages/server/src/test-client.ts (temporary file, delete after testing):
-
-This script simulates 3 players completing a full game:
-  1. Player 1 connects and creates a room → receives roomId
-  2. Players 2 and 3 connect and join the room using roomId
-  3. Player 1 emits 'start_game'
-  4. All three receive 'game_started' with their hands
-  5. Bidding round: players bid or pass until one wins
-  6. Winner emits 'select_trump'
-  7. Winner emits 'set_conditions' (if player count requires teammates)
-  8. Players take turns emitting 'play_card' until all cards are gone
-  9. All three receive 'game_over' with the winner and score summary
-
-Use socket.io-client to connect: import { io } from 'socket.io-client'
-Log every received event to console so you can trace the full flow.
-
-Run with: npx ts-node packages/server/src/test-client.ts
-(Start the server first with: npm run dev --workspace=packages/server)
-
-Fix any errors before proceeding to Phase 3.
+Replace the entire contents of packages/client/src/gameStore.ts.
+
+The new store is socket-driven. Keep the same export name (useGameStore)
+and preserve these method names so no downstream files break:
+  currentPlayer(), validCards(), isMyTurn(), availableConditionCards(), currentTrickPlays()
+
+Import { socket, connectSocket } from './socket'
+Import all types from '@blind-alliance/core'
+Import { getValidCards, getAvailableConditionCards } from '@blind-alliance/core'
+
+── New State Shape ──────────────────────────────────────────────────────────
+
+interface GameStore {
+  // Identity
+  myPlayerId: string | null
+  myPlayerName: string | null
+  roomId: string | null
+
+  // Server-driven game state (ClientGameState from events.ts)
+  phase: GamePhase
+  players: PublicPlayer[]
+  myHand: Card[]
+  deckCount: 1 | 2
+  totalPoints: number
+  minBid: number
+  removedCards: Card[]
+  bids: Bid[]
+  highestBid: Bid | null
+  bidderId: string | null
+  trumpSuit: Suit | null
+  teammateConditions: TeammateCondition[]
+  maxTeammateCount: number
+  tricks: Trick[]
+  currentTrick: Trick | null
+  currentPlayerIndex: number
+  bidderTeamScore: number
+  oppositionTeamScore: number
+  winner: 'bidder_team' | 'opposition_team' | null
+
+  // UI state
+  lastError: string | null
+  gameLog: GameLogEntry[]
+  isConnected: boolean
+
+  // Actions — emit to server
+  connect: (playerName: string, roomId?: string) => void
+  startGame: () => void
+  placeBid: (amount: number) => void
+  passBid: () => void
+  selectTrump: (suit: Suit) => void
+  setTeammateConditions: (conditions: TeammateCondition[]) => void
+  playCard: (card: Card) => void
+  clearError: () => void
+
+  // Selectors (computed from local state)
+  currentPlayer: () => PublicPlayer | undefined
+  validCards: () => Card[]
+  isMyTurn: () => boolean
+  availableConditionCards: () => AvailableConditionCard[]
+  currentTrickPlays: () => TrickPlay[]
+  amIBidder: () => boolean
+}
+
+── GameLogEntry ─────────────────────────────────────────────────────────────
+
+interface GameLogEntry {
+  id: number          ← auto-incrementing
+  timestamp: string   ← HH:MM:SS
+  message: string
+}
+
+── Initial State ────────────────────────────────────────────────────────────
+
+Set all game state fields to safe defaults:
+  phase: 'lobby', players: [], myHand: [], removedCards: [],
+  bids: [], tricks: [], currentTrick: null, currentPlayerIndex: 0,
+  bidderId: null, trumpSuit: null, teammateConditions: [],
+  highestBid: null, maxTeammateCount: 0, deckCount: 1, totalPoints: 250,
+  minBid: 125, bidderTeamScore: 0, oppositionTeamScore: 0, winner: null,
+  myPlayerId: null, myPlayerName: null, roomId: null,
+  lastError: null, gameLog: [], isConnected: false
+
+── Socket Listener Setup ────────────────────────────────────────────────────
+
+Create a function setupSocketListeners() called once at store init.
+Wire these socket events to store state updates:
+
+socket.on('connect', () =>
+  set({ isConnected: true })
+  addLog('Connected to server')
+
+socket.on('disconnect', () =>
+  set({ isConnected: false })
+  addLog('Disconnected from server')
+
+socket.on('room_joined', ({ roomId, playerId, players }) =>
+  set({ roomId, myPlayerId: playerId, players })
+  addLog(`Joined room ${roomId} as ${playerId}`)
+
+socket.on('player_joined', ({ players }) =>
+  set({ players })
+  addLog(`Player joined. Total: ${players.length}`)
+
+socket.on('game_started', ({ hand, phase }) =>
+  set({ myHand: hand, phase })
+  addLog('Game started — cards dealt')
+
+socket.on('state_update', (state: ClientGameState) =>
+  set({ ...state })                  ← spread entire ClientGameState
+  addLog(deriveLogMessage(state))    ← see helper below
+
+socket.on('action_error', ({ message }) =>
+  set({ lastError: message })
+  addLog(`ERROR: ${message}`)
+
+socket.on('game_over', ({ winner, summary }) =>
+  set({ winner, phase: 'finished' })
+  addLog(`Game over — winner: ${winner}`)
+
+── deriveLogMessage helper ──────────────────────────────────────────────────
+
+function deriveLogMessage(state: ClientGameState): string
+  Switch on state.phase:
+    'bidding'          → `Bidding — current high: ${state.highestBid?.amount ?? 'none'}`
+    'trump_select'     → `Bidder selecting trump suit`
+    'teammate_select'  → `Bidder selecting teammates`
+    'playing'          → derive from currentTrick:
+                         if currentTrick has plays:
+                           last play: `${lastPlay.playerId} played ${lastPlay.card.rank}${lastPlay.card.suit}`
+                         if trick just completed (winnerId set):
+                           `Trick won by ${currentTrick.winnerId}`
+    'finished'         → `Game finished`
+    default            → `Phase: ${state.phase}`
+
+── Actions ──────────────────────────────────────────────────────────────────
+
+connect: (playerName, roomId?) =>
+  set({ myPlayerName: playerName })
+  connectSocket()
+  socket.emit('join_room', { playerName, roomId })
+
+startGame: () => socket.emit('start_game', {})
+placeBid: (amount) => socket.emit('place_bid', { amount })
+passBid: () => socket.emit('pass_bid', {})
+selectTrump: (suit) => socket.emit('select_trump', { suit })
+setTeammateConditions: (conditions) => socket.emit('set_conditions', { conditions })
+playCard: (card) =>
+  const cardId = `${card.suit}-${card.rank}-${card.deckIndex}`
+  socket.emit('play_card', { cardId })
+clearError: () => set({ lastError: null })
+
+── Selectors ────────────────────────────────────────────────────────────────
+
+currentPlayer: () =>
+  get().players[get().currentPlayerIndex]
+
+validCards: () =>
+  const { myHand, trumpSuit, currentTrick } = get()
+  if (!trumpSuit) return myHand
+  const ledSuit = currentTrick?.ledSuit ?? null
+  return getValidCards(myHand, ledSuit, trumpSuit)
+
+isMyTurn: () =>
+  get().players[get().currentPlayerIndex]?.id === get().myPlayerId
+
+amIBidder: () =>
+  get().bidderId === get().myPlayerId
+
+availableConditionCards: () =>
+  const { myHand, players, removedCards } = get()
+  const allDealtCards = players.flatMap(p => [])  ← server doesn't send other hands
+  NOTE: server must include allDealtCards in ClientGameState for this to work.
+  Alternative: store availableConditionCards directly in ClientGameState on server
+  and just return get().availableConditionCards here.
+  Use whichever approach matches your server's ClientGameState shape.
+
+currentTrickPlays: () =>
+  get().currentTrick?.plays ?? []
+
+── Initialization ───────────────────────────────────────────────────────────
+
+Call setupSocketListeners() immediately at the bottom of the create() call,
+before returning the store object. This ensures listeners are registered once.
 ```
 
 ---
 
-# WHAT'S NEXT (Phase 3 Preview)
+## Step 3.3 — App Router
+```
+Replace packages/client/src/App.tsx
 
-Phase 3 will cover the full frontend — connecting the existing React + Zustand client
-to the live server via Socket.IO. Prompts for Phase 3 will include:
+App.tsx is the top-level router — it renders the correct screen based on phase.
+It has no logic of its own, only reads phase from the store.
 
-- `useSocket.ts` hook — connects to server, emits actions, receives state updates
-- Updating `gameStore.ts` — replace local state with server-driven `ClientGameState`
-- `Lobby` component — create room / join room by code
-- `BiddingTable` — live bidding with all players' actions visible
-- `TrumpSelector` — bidder-only, post-bid
-- `TeammateSelector` — filtered card picker using `getAvailableConditionCards()`
-- `GameTable` — `PlayerHand`, `TrickArea`, `ScoreBoard`, teammate reveal animations
-- `Results` screen — final scores, winner announcement
+import { useGameStore } from './gameStore'
+import { LobbyScreen } from './components/Lobby/LobbyScreen'
+import { BiddingScreen } from './components/Bidding/BiddingScreen'
+import { TrumpSelectScreen } from './components/TrumpSelect/TrumpSelectScreen'
+import { TeammateSelectScreen } from './components/TeammateSelect/TeammateSelectScreen'
+import { GameTableScreen } from './components/GameTable/GameTableScreen'
+import { ResultsScreen } from './components/Results/ResultsScreen'
+import { DebugPanel } from './components/Debug/DebugPanel'
+import { GameLog } from './components/Debug/GameLog'
+import { ErrorToast } from './components/shared/ErrorToast'
 
-Generate Phase 3 prompts once Phase 2 server verification passes cleanly.
+export default function App() {
+  const phase = useGameStore(s => s.phase)
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white">
+      <ErrorToast />
+      <div className="flex h-screen">
+
+        {/* Main game area */}
+        <div className="flex-1 overflow-auto p-4">
+          { phase === 'lobby'            && <LobbyScreen /> }
+          { phase === 'dealing'          && <LobbyScreen /> }  ← show lobby while dealing
+          { phase === 'bidding'          && <BiddingScreen /> }
+          { phase === 'trump_select'     && <TrumpSelectScreen /> }
+          { phase === 'teammate_select'  && <TeammateSelectScreen /> }
+          { phase === 'playing'          && <GameTableScreen /> }
+          { phase === 'reveal'           && <GameTableScreen /> }
+          { phase === 'finished'         && <ResultsScreen /> }
+        </div>
+
+        {/* Debug sidebar — always visible */}
+        <div className="w-80 border-l border-gray-700 flex flex-col">
+          <DebugPanel />
+          <GameLog />
+        </div>
+
+      </div>
+    </div>
+  )
+}
+```
+
+---
+
+## Step 3.4 — Shared Components
+```
+Create packages/client/src/components/shared/ErrorToast.tsx
+
+Reads lastError from store. If set, shows a fixed red banner at top of screen.
+Has an X button that calls clearError().
+Auto-dismisses after 4 seconds (useEffect with setTimeout → clearError).
+
+Tailwind: fixed top-0 left-0 right-0 z-50 bg-red-600 text-white px-4 py-3 flex justify-between
+```
+```
+Create packages/client/src/components/shared/CardComponent.tsx
+
+Props:
+  card: Card
+  onClick?: () => void
+  disabled?: boolean      ← greyed out, not clickable
+  highlighted?: boolean   ← glowing border — valid move indicator
+  faceDown?: boolean      ← shows card back, used for other players
+
+Display:
+  Show rank + suit symbol (♠ ♥ ♦ ♣)
+  Color: red for hearts/diamonds, white for spades/clubs
+  Show points badge if card.points > 0 (e.g. "30pts" on 3♠, "10pts" on Aces)
+  If faceDown: show a simple card back pattern instead
+  If highlighted: bright green border ring
+  If disabled: opacity-40 cursor-not-allowed
+
+Tailwind: rounded-lg border-2 w-16 h-24 flex flex-col items-center justify-center
+          text-sm font-bold cursor-pointer select-none transition-all
+```
+```
+Create packages/client/src/components/shared/PhaseLabel.tsx
+
+Props: phase: GamePhase
+Returns a colored pill badge showing the current phase name in human-readable form:
+  lobby → "Waiting for players"
+  dealing → "Dealing cards"
+  bidding → "Bidding"
+  trump_select → "Trump Selection"
+  teammate_select → "Teammate Selection"
+  playing → "Playing"
+  finished → "Game Over"
+```
+
+---
+
+## Step 3.5 — Debug Panel
+```
+Create packages/client/src/components/Debug/DebugPanel.tsx
+
+This panel is always visible in the right sidebar.
+It shows the full state of ALL players simultaneously — essential for testing
+from a single browser tab where you are one player but want to see everyone.
+
+Reads from store: players, myPlayerId, phase, trumpSuit, bidderId,
+                  highestBid, bidderTeamScore, oppositionTeamScore,
+                  currentTrick, removedCards, teammateConditions
+
+Display sections:
+
+1. GAME INFO (compact row)
+   Phase badge | Trump suit (if set) | Deck count | Min bid
+
+2. REMOVED CARDS
+   Small chips for each removed card: "2♠" "2♥" etc.
+   Label: "Removed during setup balancing"
+   If none: show "None removed"
+
+3. PLAYERS TABLE
+   One row per player with columns:
+   Name | Team (color-coded: blue=bidder, red=opposition, grey=unknown)
+   | Cards in hand (count) | Points collected | Is current turn (→ arrow indicator)
+   | Is bidder (★ star) | Is revealed (✓ check)
+
+4. CURRENT TRICK
+   Show each TrickPlay in order: "PlayerName: rank suit (playOrder: N)"
+   If trick is complete: show "Winner: PlayerName"
+
+5. TEAMMATE CONDITIONS
+   List each condition:
+     CardReveal: "suit rank (Nth instance)" — satisfied/collapsed/pending status
+     FirstTrickWin: "First trick winner" — status
+   Color: green=satisfied, red=collapsed, yellow=pending
+
+6. BID HISTORY
+   List all bids: "PlayerName: amount" or "PlayerName: PASS"
+
+Tailwind: overflow-y-auto p-3 text-xs font-mono bg-gray-800 space-y-4
+Section headers: text-gray-400 uppercase text-xs tracking-wider mb-1
+```
+```
+Create packages/client/src/components/Debug/GameLog.tsx
+
+Shows the gameLog array from the store in reverse chronological order
+(newest entry at top).
+
+Each entry shows: [HH:MM:SS] message
+Max height: 40% of sidebar. Scrollable.
+Clear button at top that resets the log array in store (add clearLog action).
+
+Tailwind: border-t border-gray-700 p-3 overflow-y-auto text-xs
+          font-mono text-green-400 bg-gray-900
+```
+
+---
+
+## Step 3.6 — Lobby Screen
+```
+Create packages/client/src/components/Lobby/LobbyScreen.tsx
+
+This is the first screen. It has two modes:
+
+── Mode 1: Not yet connected (myPlayerId is null) ──────────────────────────
+
+Show a centered card with:
+  - Title: "Blind Alliance"
+  - Text input: "Your name" (required, max 20 chars)
+  - Text input: "Room code (leave blank to create new room)" (optional, 6 chars uppercase)
+  - Button: "Join Game"
+  - On click: call store.connect(playerName, roomId || undefined)
+  - Disable button while name is empty
+
+── Mode 2: Connected, waiting in lobby (myPlayerId set, phase === 'lobby') ──
+
+Show:
+  - "Room Code: XXXXXX" — large, copyable (click to copy to clipboard)
+  - "Share this code with other players"
+  - List of players currently in the room (names + "HOST" badge for index 0)
+  - Player count: "3 / 10 players"
+  - If I am the host (players[0].id === myPlayerId):
+      "Start Game" button — enabled only if players.length >= 3
+      Hint: "Minimum 3 players required"
+  - If I am not the host:
+      "Waiting for host to start the game..."
+  - Connection status dot (green/red) in corner
+
+Tailwind: min-h-screen flex items-center justify-center bg-gray-900
+```
+
+---
+
+## Step 3.7 — Bidding Screen
+```
+Create packages/client/src/components/Bidding/BiddingScreen.tsx
+
+Reads from store: players, myPlayerId, bids, highestBid, minBid, isMyTurn(), myHand
+
+Display layout (two columns):
+
+── Left: My Hand (read-only during bidding) ─────────────────────────────────
+Show all cards in myHand using CardComponent with disabled=true.
+Label: "Your Hand"
+
+── Right: Bidding Panel ──────────────────────────────────────────────────────
+Show: "Current highest bid: 175" or "No bids yet"
+Show: "Minimum bid: 125"
+
+Bid history list — one row per bid in order:
+  "PlayerName bid 150" or "PlayerName passed"
+  Highlight the current highest bidder row in yellow.
+
+If isMyTurn():
+  Number input — starts at (highestBid?.amount ?? minBid - 1) + 1
+  Enforce minimum = highestBid + 1 or minBid, whichever is higher
+  "Place Bid" button → store.placeBid(amount)
+  "Pass" button → store.passBid()
+Else:
+  "Waiting for [currentPlayer name] to bid..."
+
+Show whose turn it is with a clear indicator.
+```
+
+---
+
+## Step 3.8 — Trump Select Screen
+```
+Create packages/client/src/components/TrumpSelect/TrumpSelectScreen.tsx
+
+Reads from store: amIBidder(), highestBid, myHand
+
+── If I am the Bidder ───────────────────────────────────────────────────────
+Show: "You won the bid with [amount] points! Choose your trump suit."
+Show my hand (read-only) so I can make an informed decision.
+
+4 large suit buttons in a row:
+  ♠ Spades | ♥ Hearts | ♦ Diamonds | ♣ Clubs
+  Red for hearts/diamonds, white for spades/clubs
+  On click: store.selectTrump(suit)
+
+── If I am NOT the Bidder ───────────────────────────────────────────────────
+Show: "[BidderName] won the bid with [amount] points."
+Show: "Waiting for [BidderName] to choose trump suit..."
+Show my hand (read-only).
+```
+
+---
+
+## Step 3.9 — Teammate Select Screen
+```
+Create packages/client/src/components/TeammateSelect/TeammateSelectScreen.tsx
+
+Reads from store: amIBidder(), maxTeammateCount, deckCount,
+                  availableConditionCards(), trumpSuit, myHand
+
+── If I am the Bidder ───────────────────────────────────────────────────────
+Show: "Trump: [suit symbol]"
+Show: "Choose [N] teammate condition(s)"
+Show my hand (read-only).
+
+Render N condition slots (N = maxTeammateCount).
+If maxTeammateCount === 0: skip this screen automatically by calling
+  store.setTeammateConditions([]) immediately on mount (useEffect).
+
+Each condition slot has:
+  Mode toggle: "Card Reveal" | "First Trick Win"
+
+  If Card Reveal mode:
+    Suit dropdown: ♠ ♥ ♦ ♣
+    Rank dropdown: filtered to ranks available for selected suit
+                   using availableConditionCards()
+    Instance dropdown: "1st" | "2nd"
+                       Only shown if deckCount === 2 AND selected card
+                       has availableInstances.length === 2
+    Removed cards never appear in dropdowns.
+
+  If First Trick Win mode:
+    No further inputs needed — just a label "Whoever wins trick 1"
+
+Validation:
+  Prevent duplicate conditions (same suit + rank + instance).
+  Show inline error per slot if duplicate detected.
+
+"Confirm Teammates" button:
+  Disabled until all N slots are filled with valid conditions.
+  On click: store.setTeammateConditions(conditions)
+
+── If I am NOT the Bidder ───────────────────────────────────────────────────
+Show: "Waiting for [BidderName] to select teammate conditions..."
+Show my hand (read-only).
+```
+
+---
+
+## Step 3.10 — Game Table Screen
+```
+Create packages/client/src/components/GameTable/GameTableScreen.tsx
+
+This is the main playing screen. Three sections:
+
+── Top Bar ──────────────────────────────────────────────────────────────────
+Left:  "Trump: ♠" (suit symbol, colored)
+Center: "Trick [N] of [total]" | whose turn it is
+Right: "Bid: [amount]" | "Bidder: [name]"
+
+── Center: Trick Area ───────────────────────────────────────────────────────
+Create GameTableScreen/TrickArea.tsx
+
+Shows cards played in the current trick.
+For each TrickPlay: show CardComponent + player name label below.
+Arrange in a horizontal row centered on screen.
+If trick is complete (all players played): show "Trick won by [name]!" banner
+  for 1.5 seconds before the next trick begins (useEffect + setTimeout).
+If no trick in progress: show "Waiting for first card..."
+
+── Bottom: My Hand ──────────────────────────────────────────────────────────
+Create GameTableScreen/PlayerHand.tsx
+
+Shows all cards in myHand using CardComponent.
+If isMyTurn():
+  highlighted=true for cards in validCards()
+  disabled=true for cards NOT in validCards()
+  onClick: store.playCard(card)
+Else:
+  All cards disabled=true
+  Show: "Waiting for [currentPlayer name]..."
+
+── Teammate Reveal Toast ─────────────────────────────────────────────────────
+Create GameTableScreen/TeammateRevealToast.tsx
+
+Watch for changes in players where isRevealed flips from false to true.
+When detected: show a temporary banner (3 seconds):
+  "[PlayerName] is revealed as [Bidder's / Opposition] teammate!"
+Color: blue for bidder team, red for opposition.
+Use useEffect watching the players array.
+
+── Score Bar ────────────────────────────────────────────────────────────────
+Create GameTableScreen/ScoreBar.tsx
+
+Fixed bar showing running totals:
+  "Bidder Team: [score] / [bid]"   ← shows progress toward bid
+  "Opposition: [score]"
+  Progress bar for bidder team: fills as they collect points toward bid target.
+  Color: green if on track (score / tricksPlayed >= bid / totalTricks), else red.
+```
+
+---
+
+## Step 3.11 — Results Screen
+```
+Create packages/client/src/components/Results/ResultsScreen.tsx
+
+Reads from store: winner, bidderTeamScore, oppositionTeamScore,
+                  highestBid, players, myPlayerId
+
+── Header ───────────────────────────────────────────────────────────────────
+Large banner:
+  If winner === 'bidder_team': "🏆 Bidder's Team Wins!"  (green)
+  If winner === 'opposition_team': "Bidder's Team Failed" (red)
+
+── Score Summary ─────────────────────────────────────────────────────────────
+Two columns side by side:
+
+Bidder's Team                  Opposition Team
+──────────────                 ───────────────
+[PlayerName]  [points]         [PlayerName]  [points]
+[PlayerName]  [points]
+──────────────                 ───────────────
+Total: [N]                     Total: [N]
+Bid:   [N]                     
+Result: Met / Failed
+
+── My Result ────────────────────────────────────────────────────────────────
+Personalized line: "You were on the [winning/losing] team"
+Show which team this player was on (bidder or opposition).
+
+── Play Again ───────────────────────────────────────────────────────────────
+"Play Again" button → reloads the page (window.location.reload())
+This brings player back to lobby to start a new session.
+```
+
+---
+
+## Step 3.12 — Wire Up and Verify
+```
+Verify the complete client setup:
+
+1. Run both server and client:
+     npm run dev --workspace=packages/server
+     npm run dev --workspace=packages/client
+
+2. Test Scenario 1 — Basic 3-player game:
+   Open 3 browser tabs, all pointing to http://localhost:5173
+   Tab 1: Enter name, click "Join Game" (creates room, gets room code)
+   Tab 2: Enter name + room code, click "Join Game"
+   Tab 3: Enter name + room code, click "Join Game"
+   Tab 1 (host): Click "Start Game"
+   Verify: all tabs show their own hand, debug panel shows all 3 players
+
+3. Test Scenario 2 — Bidding:
+   Each tab places a bid or passes in turn.
+   Verify: bid history updates across all tabs simultaneously.
+   Verify: invalid bid (too low) shows error toast on that tab only.
+
+4. Test Scenario 3 — Trump + Teammate selection:
+   Winning bidder selects trump.
+   Verify: non-bidder tabs show "waiting" state.
+   Bidder sets teammate conditions.
+   Verify: TeammateSelector only shows non-removed cards.
+   Verify: instance dropdown only appears in 2-deck games.
+
+5. Test Scenario 4 — Playing tricks:
+   Players take turns playing cards.
+   Verify: only valid cards are highlighted on active player's tab.
+   Verify: played cards appear in TrickArea on all tabs.
+   Verify: teammate reveal toast fires when condition is satisfied.
+   Verify: debug panel shows condition status updating (pending→satisfied/collapsed).
+
+6. Test Scenario 5 — Collapse scenarios:
+   Set up a condition where the bidder will play their own named card.
+   Verify: condition shows as collapsed in debug panel.
+   Set up two conditions pointing to the same player.
+   Verify: second condition collapses correctly.
+
+7. Test Scenario 6 — 6-player game (2 decks):
+   Open 6 tabs. Verify 2-deck dealing, instance dropdown in TeammateSelector,
+   and duplicate card tiebreak (second played wins) in trick resolution.
+
+8. Test Scenario 7 — Game over:
+   Play until all cards exhausted.
+   Verify: Results screen appears on all tabs with correct winner.
+   Verify: "Play Again" reloads to lobby correctly.
+```
+
+---
+
+# TESTING CHECKLIST
+
+Use the debug panel and game log to verify these after Phase 3 is complete:
+
+## Setup
+- [ ] 3 of Spades never appears in removed cards list
+- [ ] Removed cards never appear in TeammateSelector dropdowns
+- [ ] Card count per player is equal across all players
+
+## Bidding
+- [ ] Bids below minimum are rejected (error toast, no state change)
+- [ ] Bids below current highest are rejected
+- [ ] All-pass triggers re-deal
+- [ ] Highest bidder transitions to trump_select phase
+
+## Teammate Conditions
+- [ ] Instance dropdown only shown for 2-deck games with 2 instances available
+- [ ] Duplicate conditions blocked with inline error
+- [ ] maxTeammateCount === 0 skips teammate select automatically
+
+## Trick Resolution
+- [ ] Trump beats led suit regardless of rank
+- [ ] Highest trump wins among multiple trumps
+- [ ] Fuse cards never win
+- [ ] [2-deck] Second identical card played beats first (check playOrder in debug panel)
+
+## Teammate Reveals
+- [ ] Reveal toast fires at correct moment
+- [ ] Bidder playing own named card → collapse shown in debug panel
+- [ ] Two conditions resolving to same player → second collapses
+- [ ] Revealed team shown correctly in debug panel player table
+
+## Scoring
+- [ ] Points accumulate correctly in score bar during play
+- [ ] Final scores match sum of collected point cards
+- [ ] Winner determined correctly (bidder team score ≥ bid)
