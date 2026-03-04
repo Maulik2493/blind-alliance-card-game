@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Card, Suit, GamePhase, Bid, Trick, TrickPlay, TeammateCondition } from '@blind-alliance/core';
 import type { AvailableConditionCard } from '@blind-alliance/core';
-import { getValidCards, getAvailableConditionCards } from '@blind-alliance/core';
+import { getValidCards, getAvailableConditionCards, buildDeck } from '@blind-alliance/core';
 import { socket, connectSocket } from '../socket';
 
 // ─── Types (mirrored from server/src/events.ts) ─────────────────────────────
@@ -170,7 +170,15 @@ export const useGameStore = create<GameStore>((set, get) => {
   });
 
   socket.on('state_update', ({ state }) => {
+    const prevPhase = get().phase;
     set({ ...state });
+    // Temporary debug: log phase transitions involving 'playing'
+    if (prevPhase !== state.phase || state.phase === 'playing') {
+      const currentP = state.players[state.currentPlayerIndex];
+      console.log(
+        `[STATE_UPDATE] ${prevPhase} → ${state.phase} | currentPlayerIndex=${state.currentPlayerIndex} → ${currentP?.name} (${currentP?.id}) | bidderId=${state.bidderId} | myPlayerId=${get().myPlayerId}`
+      );
+    }
     addLog(deriveLogMessage(state));
   });
 
@@ -279,8 +287,17 @@ export const useGameStore = create<GameStore>((set, get) => {
     },
 
     availableConditionCards: () => {
-      const { myHand, removedCards } = get();
-      return getAvailableConditionCards(myHand, removedCards);
+      const { deckCount, removedCards } = get();
+      // Reconstruct all dealt cards: full deck(s) minus removed cards
+      const fullDeck = deckCount === 2
+        ? [...buildDeck(0), ...buildDeck(1)]
+        : buildDeck(0);
+      const allDealtCards = fullDeck.filter(
+        (c) => !removedCards.some(
+          (r) => r.suit === c.suit && r.rank === c.rank && r.deckIndex === c.deckIndex,
+        ),
+      );
+      return getAvailableConditionCards(allDealtCards, removedCards);
     },
 
     currentTrickPlays: () => {

@@ -167,6 +167,9 @@ export function TeammateSelectScreen() {
       <div className="space-y-4">
         {slots.map((slot, index) => {
           const dupError = getDuplicateError(index);
+          const ftwUsedElsewhere = slots.some(
+            (s, i) => i !== index && s.mode === 'first_trick_win',
+          );
           return (
             <div key={index} className="bg-gray-800 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-3">
@@ -184,7 +187,7 @@ export function TeammateSelectScreen() {
                   className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
                 >
                   <option value="card_reveal">Card Reveal</option>
-                  <option value="first_trick_win">First Trick Win</option>
+                  <option value="first_trick_win" disabled={ftwUsedElsewhere}>First Trick Win</option>
                 </select>
               </div>
 

@@ -9,10 +9,15 @@ wins if their collected points meet or exceed the bid.
 ---
 
 ## Folder Structure
-- `src/core/`        — Pure game logic. No framework imports. Fully unit-testable.
-- `src/store/`       — Zustand store. Wraps core functions. No direct UI logic.
-- `src/components/`  — React UI. Reads from store only. Never imports from core/ directly.
-- `tests/core/`      — Unit tests for all core logic using Vitest.
+- `packages/core/`      — Pure game logic. No framework imports. Fully unit-testable.
+- `packages/server/`    — Node.js + Express + Socket.IO server. Imports from core only.
+- `packages/client/`    — React + Vite + Zustand frontend. Reads from store only.
+- `packages/core/tests/` — Unit tests for all core logic using Vitest.
+
+Module dependency rule:
+  UI components → store → core logic
+  core/ has NO dependency on store/ or components/
+  store/ has NO dependency on components/
 
 ---
 
@@ -25,13 +30,16 @@ interface Card {
   suit: Suit;
   rank: Rank;
   points: number;      // 0, 5, 10, or 30
-  deckIndex: 0 | 1;   // Distinguishes duplicate cards in 2-deck games
+  deckIndex: 0 | 1;   // Distinguishes the two physical cards in 2-deck games
+                       // deckIndex is ONLY used for physical card identity
+                       // it is NEVER used for instance tracking or condition logic
 }
 
 interface TrickPlay {
   playerId: string;
   card: Card;
   playOrder: number;   // Clockwise position within the trick (1 = first played, N = last)
+                       // Used exclusively for duplicate card tiebreaking
 }
 
 interface Trick {
@@ -42,15 +50,24 @@ interface Trick {
   pointsInTrick: number;
 }
 
-interface TeammateCondition {
-  type: 'card_reveal' | 'first_trick_win';
-  suit?: Suit;
-  rank?: Rank;
-  instance?: 1 | 2;              // 1-deck games always use 1
+interface CardRevealCondition {
+  type: 'card_reveal';
+  suit: Suit;
+  rank: Rank;
+  instance: 1 | 2;             // Which chronological play of this suit+rank triggers this
   satisfied: boolean;
-  collapsed: boolean;             // True when the slot is voided
+  collapsed: boolean;
   satisfiedByPlayerId: string | null;
 }
+
+interface FirstTrickWinCondition {
+  type: 'first_trick_win';
+  satisfied: boolean;
+  collapsed: boolean;
+  satisfiedByPlayerId: string | null;
+}
+
+type TeammateCondition = CardRevealCondition | FirstTrickWinCondition;
 
 type GamePhase =
   | 'lobby' | 'dealing' | 'bidding' | 'trump_select'
@@ -62,14 +79,14 @@ interface GameState {
   deckCount: 1 | 2;
   totalPoints: 250 | 500;
   minBid: 125 | 250;
-  removedCards: Card[];                        // Cards stripped during setup balancing
+  removedCards: Card[];
   bids: Bid[];
   highestBid: Bid | null;
   bidderId: string | null;
   trumpSuit: Suit | null;
   teammateConditions: TeammateCondition[];
   maxTeammateCount: number;
-  cardInstanceTracker: Map<string, number>;   // key: "suit-rank", tracks play count per card type
+  cardInstanceTracker: Map<string, number>;  // key: "suit-rank" ONLY — never includes deckIndex
   tricks: Trick[];
   currentTrick: Trick | null;
   currentPlayerIndex: number;
@@ -111,7 +128,12 @@ Cards are removed before dealing so the total is evenly divisible by player coun
 
 ## Bidding Rules
 - Minimum bid: `deckCount === 1 ? 125 : 250`
-- Each new bid must be strictly greater than the current highest
+- ALL bids must be exact multiples of 5 (125, 130, 135 ... never 126, 141, etc.)
+- Each new bid must be strictly greater than the current highest AND a multiple of 5
+- nextValidBid(currentHighest, deckCount):
+    if currentHighest is null → return getMinBid(deckCount)
+    else → return Math.ceil((currentHighest + 1) / 5) * 5
+  Examples: nextValidBid(140, 1) → 145, nextValidBid(150, 1) → 155
 - Players may pass
 - If all players pass with no bid placed → re-deal
 - Highest bidder becomes the Bidder
@@ -136,22 +158,91 @@ maxTeammateCount  = maxBidderTeamSize - 1
 
 ## Teammate Conditions
 
+### No Hand Restriction
+The Bidder may name ANY card that exists in the dealt deck as a condition,
+including cards they currently hold in their own hand.
+There is no exclusion based on the Bidder's hand.
+The UI shows all available (non-removed) cards freely.
+
+### Available Cards for Conditions
+A card is available to name if at least one instance was not removed during balancing:
+- Both instances of a card exist in dealt deck → instances [1, 2] available
+- Only one instance exists (other was removed during balancing) → instance [1] only
+- deckIndex is never used to determine availability — only removal status matters
+
 ### Card Reveal Condition
-The player who plays the named card becomes the Bidder's teammate at the moment they play it.
-- 1-deck games: name a card (suit + rank)
-- 2-deck games: name a card + instance (1st or 2nd play of that card across all tricks)
-- **Only cards present in the dealt deck may be named** — filter using `removedCards`
-- `cardInstanceTracker` (Map, key: `"suit-rank"`) is incremented each time a card type is played
-  and used to match the correct instance
+The player who plays the named card (matching suit+rank+instance) becomes
+the Bidder's teammate at the exact moment they play it.
+
+- 1-deck games: name a card by suit + rank (instance is always 1)
+- 2-deck games: name a card by suit + rank + instance (1st or 2nd)
+- Instance means: the Nth time that suit+rank is played chronologically in the game
+  by ANY player including the Bidder
+- Example: Bidder names "2nd A♠"
+    Trick 3: Bidder plays A♠ → 1st instance → condition not triggered, tracker increments
+    Trick 7: Player B plays A♠ → 2nd instance → condition triggers → Player B is teammate
 
 ### First Trick Win Condition
 Whoever wins trick 1 becomes the Bidder's teammate.
+- MAXIMUM ONE FirstTrickWin condition allowed per game regardless of deck count
+  or number of teammate slots
+- Core must reject conditions arrays with more than one FirstTrickWin entry
+- UI must disable the FirstTrickWin option on all other slots once one slot uses it
 
-### Collapse Rules (reduce teammate count)
-1. Bidder plays their own named card → condition collapsed, no teammate gained
-2. Bidder wins trick 1 with a first-trick-win condition → condition collapsed
-3. Two conditions resolve to the same player → first stands, second collapses
-4. All collapses result in a smaller Bidder team — this is accepted and not recoverable
+### Turn Order After Teammate Selection
+After setTeammateConditions() completes and phase transitions to 'playing':
+  currentPlayerIndex = players.findIndex(p => p.id === bidderId)
+The Bidder ALWAYS leads the first trick. This overrides any previous currentPlayerIndex.
+
+---
+
+## Instance Tracking
+
+cardInstanceTracker: Map<string, number>
+key format: `"suit-rank"` — e.g. "spades-A", "hearts-5"
+**NEVER include deckIndex in the key**
+
+- Incremented every time that suit+rank is played by ANYONE including the Bidder
+- Tracks cumulative play count across ALL tricks
+- 1st instance = first time that suit+rank is played in the entire game
+- 2nd instance = second time that suit+rank is played in the entire game
+
+On every card play:
+  1. Increment tracker: cardInstanceTracker["suit-rank"]++
+  2. currentInstance = cardInstanceTracker["suit-rank"]
+  3. Check each unsatisfied, non-collapsed CardRevealCondition:
+       if condition.suit === card.suit
+       && condition.rank === card.rank
+       && condition.instance === currentInstance:
+         → condition is triggered (see collapse rules below)
+       if condition.suit === card.suit
+       && condition.rank === card.rank
+       && condition.instance !== currentInstance:
+         → tracker already incremented, condition untouched, wait silently
+
+---
+
+## Collapse Rules
+
+A collapse sets condition.collapsed = true and grants no teammate for that slot.
+The Bidder must accept all collapses — team size shrinks accordingly.
+
+**Collapse Trigger 1 — Bidder self-play:**
+  Condition's suit+rank+instance matches AND playerId === bidderId
+  → condition collapses
+
+**Collapse Trigger 2 — Duplicate player:**
+  Two or more conditions resolve to the same satisfiedByPlayerId
+  → keep the first satisfied condition, collapse all subsequent ones for that player
+  → includes the case where one player holds both copies of a card in a 2-deck game
+     and plays both, satisfying two conditions the Bidder set on that same card
+
+**Non-collapse case:**
+  Card matches condition's suit+rank but instance does not match yet
+  → tracker increments, condition is completely untouched
+
+After any condition is satisfied or collapsed, always call resolveCollapses()
+to catch Trigger 2 across all conditions.
 
 ---
 
@@ -160,41 +251,28 @@ Whoever wins trick 1 becomes the Bidder's teammate.
 1. Collect all plays where card.suit === trumpSuit
 2. If any trump plays exist:
      winner = highest rank among them
-     on rank tie → higher playOrder wins  ← SECOND PLAYED WINS
+     on rank tie (same suit+rank) → higher playOrder wins  ← SECOND PLAYED WINS
 3. If no trump plays:
      winner = highest rank among plays where card.suit === trick.ledSuit
-     on rank tie → higher playOrder wins  ← SECOND PLAYED WINS
+     on rank tie (same suit+rank) → higher playOrder wins  ← SECOND PLAYED WINS
 4. Fuse cards (not led suit, not trump) are NEVER candidates to win
 ```
 
+### Duplicate Card Tiebreak (2-deck games)
+When two plays have identical suit AND rank:
+- The play with the higher playOrder wins (second played takes priority)
+- playOrder is assigned clockwise within the trick: 1 = first player, N = last
+- deckIndex is not used for tiebreaking — only playOrder matters
+
 ### Fuse Card
-A fuse card is any card that is neither the led suit nor the trump suit.
-Played when a player cannot follow suit and chooses not to (or cannot) play trump.
+Any card that is neither the led suit nor the trump suit.
+Played when unable to follow suit. Can never win a trick.
 `isFuseCard(card, ledSuit, trumpSuit): card.suit !== ledSuit && card.suit !== trumpSuit`
 
 ### Valid Card Rules (getValidCards)
-1. If ledSuit is null (first play of trick) → all cards valid
-2. If player has any card matching ledSuit → must play one of those only
-3. If player has no ledSuit card → any card is valid (trump or fuse)
-
----
-
-## Duplicate Card Tiebreak (2-deck games only)
-When two plays have identical suit AND rank:
-- The play with the **higher `playOrder`** wins (second played takes priority)
-- `playOrder` is assigned in clockwise sequence within the trick: 1 = first player, N = last player
-- This applies to both trump ties and led-suit ties
-
----
-
-## Teammate Selector UI Rules
-- Only shown to the Bidder, after trump is selected
-- Card options are derived from `getAvailableConditionCards(dealtCards, removedCards)`
-- A card is available if at least one instance was not removed during balancing
-- Instance dropdown (1st / 2nd) is shown only when `deckCount === 2` AND both instances exist
-- Removed cards must NEVER appear as selectable options
-- Duplicate conditions (same suit + rank + instance) are not allowed
-- Submit is disabled until all teammate slots are filled
+1. ledSuit is null (first play of trick) → all cards valid
+2. Player has any card matching ledSuit → must play one of those only
+3. Player has no ledSuit card → any card valid (trump or fuse)
 
 ---
 
@@ -207,10 +285,47 @@ winner = bidderTeamScore >= bid ? 'bidder_team' : 'opposition_team'
 
 ---
 
-## Invariants (Never Violate These)
+## Socket Event Contract
+
+CLIENT → SERVER:
+  'join_room'       { playerName: string, roomId?: string }
+  'start_game'      {}
+  'place_bid'       { amount: number }
+  'pass_bid'        {}
+  'select_trump'    { suit: Suit }
+  'set_conditions'  { conditions: TeammateCondition[] }
+  'play_card'       { cardId: string }  ← format: "suit-rank-deckIndex" e.g. "spades-A-0"
+
+SERVER → CLIENT:
+  'room_joined'     { roomId, playerId, players: PublicPlayer[] }
+  'player_joined'   { players: PublicPlayer[] }
+  'game_started'    { hand: Card[], phase: GamePhase }
+  'state_update'    { state: ClientGameState }  ← sanitized, no other players' hands
+  'action_error'    { message: string }  ← only to the player who made the invalid action
+  'game_over'       { winner, summary: ScoreSummary }
+
+ClientGameState = full GameState with:
+  players: PublicPlayer[]   ← no hands exposed
+  myHand: Card[]            ← only this player's own cards
+
+PublicPlayer = { id, name, team, isRevealed, cardCount }
+
+---
+
+## Invariants — Never Violate These
 - 3 of Spades is never removed during setup balancing
-- Removed cards are never shown as condition options in the UI
-- `playOrder` must always be set when adding a play to a trick
-- `cardInstanceTracker` must be updated before condition checking on every card play
+- All bids must be exact multiples of 5
+- nextValidBid() is used wherever the next valid bid amount is needed
+- cardInstanceTracker key is ALWAYS "suit-rank" — never includes deckIndex
+- deckIndex is ONLY used to distinguish physical cards — never for instance logic
+- playOrder must always be set when adding a play to a trick
+- cardInstanceTracker must be incremented BEFORE condition checking on every card play
+- After setTeammateConditions(), currentPlayerIndex must be set to bidder's index
+- Only one FirstTrickWin condition is allowed per game
+- resolveCollapses() must be called after every condition satisfaction or collapse
 - core/ functions are pure — no side effects, no store imports, no React imports
 - All state lives in memory — never use localStorage or sessionStorage
+- In TeammateSelectScreen, card options are derived exclusively from
+  availableConditionCards() — never filtered by the bidder's hand.
+  myHand is only used for displaying the bidder's own cards, not for
+  restricting condition choices.

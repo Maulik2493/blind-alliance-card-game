@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { CardComponent } from '../shared/CardComponent';
+import { nextValidBid } from '@blind-alliance/core';
 
 export function BiddingScreen() {
   const players = useGameStore((s) => s.players);
@@ -10,12 +11,13 @@ export function BiddingScreen() {
   const minBid = useGameStore((s) => s.minBid);
   const isMyTurn = useGameStore((s) => s.isMyTurn);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
+  const deckCount = useGameStore((s) => s.deckCount);
   const placeBid = useGameStore((s) => s.placeBid);
   const passBid = useGameStore((s) => s.passBid);
 
   const myTurn = isMyTurn();
   const current = currentPlayer();
-  const minimumBid = Math.max(minBid, (highestBid?.amount ?? 0) + 1);
+  const minimumBid = nextValidBid(highestBid?.amount ?? null, deckCount as 1 | 2);
   const [bidAmount, setBidAmount] = useState(minimumBid);
 
   // Keep bidAmount in sync with minimumBid changes
@@ -82,8 +84,12 @@ export function BiddingScreen() {
                 className="w-24 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <button
-                onClick={() => placeBid(bidAmount)}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors cursor-pointer"
+                onClick={() => {
+                  if (bidAmount % 5 !== 0) return;
+                  placeBid(bidAmount);
+                }}
+                disabled={bidAmount % 5 !== 0 || bidAmount < minimumBid}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold px-4 py-2 rounded-lg transition-colors cursor-pointer"
               >
                 Place Bid
               </button>

@@ -142,3 +142,115 @@ describe('resolveFirstTrickWin', () => {
     expect(result[0]!.satisfied).toBe(false);
   });
 });
+
+// ─── Fix 3: Instance tracking ignores deckIndex ──────────────────────────────
+
+describe('instance tracking ignores deckIndex', () => {
+  it('A: two plays of same suit+rank with different deckIndex share instance counter', () => {
+    const conditions: TeammateCondition[] = [
+      cardReveal('spades', 'A', 2),
+    ];
+    const tracker = new Map<string, number>();
+
+    // 1st play: deckIndex 0
+    const after1 = checkCardPlayConditions(
+      { playerId: 'p2', card: card('spades', 'A', 0) },
+      'p1',
+      conditions,
+      tracker,
+    );
+    expect(tracker.get('spades-A')).toBe(1);
+    expect(after1[0]!.satisfied).toBe(false); // needs instance 2
+
+    // 2nd play: deckIndex 1 — same suit+rank, should become instance 2
+    const after2 = checkCardPlayConditions(
+      { playerId: 'p3', card: card('spades', 'A', 1) },
+      'p1',
+      after1,
+      tracker,
+    );
+    expect(tracker.get('spades-A')).toBe(2);
+    expect(after2[0]!.satisfied).toBe(true);
+    expect(after2[0]!.satisfiedByPlayerId).toBe('p3');
+  });
+
+  it('B: non-matching instance is silently ignored', () => {
+    const conditions: TeammateCondition[] = [
+      cardReveal('hearts', 'K', 2),
+    ];
+    const tracker = new Map<string, number>();
+
+    // 1st play — instance 1, condition wants instance 2
+    const after1 = checkCardPlayConditions(
+      { playerId: 'p2', card: card('hearts', 'K', 0) },
+      'p1',
+      conditions,
+      tracker,
+    );
+    expect(after1[0]!.satisfied).toBe(false);
+    expect(after1[0]!.collapsed).toBe(false);
+    expect(after1[0]!.satisfiedByPlayerId).toBeNull();
+  });
+
+  it('C: bidder plays matching instance → collapse', () => {
+    const conditions: TeammateCondition[] = [
+      cardReveal('diamonds', 'Q', 1),
+    ];
+    const tracker = new Map<string, number>();
+
+    const result = checkCardPlayConditions(
+      { playerId: 'p1', card: card('diamonds', 'Q', 0) },
+      'p1',
+      conditions,
+      tracker,
+    );
+    expect(result[0]!.collapsed).toBe(true);
+    expect(result[0]!.satisfied).toBe(false);
+  });
+
+  it('D: bidder plays non-matching instance → no collapse, just tracker increment', () => {
+    const conditions: TeammateCondition[] = [
+      cardReveal('clubs', 'J', 2),
+    ];
+    const tracker = new Map<string, number>();
+
+    // Bidder plays 1st instance, condition wants 2nd
+    const result = checkCardPlayConditions(
+      { playerId: 'p1', card: card('clubs', 'J', 0) },
+      'p1',
+      conditions,
+      tracker,
+    );
+    expect(tracker.get('clubs-J')).toBe(1);
+    expect(result[0]!.collapsed).toBe(false);
+    expect(result[0]!.satisfied).toBe(false);
+  });
+
+  it('E: same player satisfies both instances → second collapses (duplicate player)', () => {
+    const conditions: TeammateCondition[] = [
+      cardReveal('hearts', 'A', 1),
+      cardReveal('hearts', 'A', 2),
+    ];
+    const tracker = new Map<string, number>();
+
+    // p2 plays 1st instance
+    const after1 = checkCardPlayConditions(
+      { playerId: 'p2', card: card('hearts', 'A', 0) },
+      'p1',
+      conditions,
+      tracker,
+    );
+    expect(after1[0]!.satisfied).toBe(true);
+    expect(after1[0]!.satisfiedByPlayerId).toBe('p2');
+
+    // p2 plays 2nd instance → duplicate player → collapses
+    const after2 = checkCardPlayConditions(
+      { playerId: 'p2', card: card('hearts', 'A', 1) },
+      'p1',
+      after1,
+      tracker,
+    );
+    expect(after2[1]!.collapsed).toBe(true);
+    expect(after2[1]!.satisfied).toBe(false);
+  });
+});

@@ -246,20 +246,30 @@ export function passBid(state: GameState, playerId: string): GameState {
 // ─── Trump Selection ─────────────────────────────────────────────────────────
 
 export function selectTrump(state: GameState, suit: Suit): GameState {
+  const goDirectToPlaying = state.maxTeammateCount === 0;
+  const bidderIndex = state.players.findIndex(p => p.id === state.bidderId);
   return {
     ...state,
     trumpSuit: suit,
-    phase: state.maxTeammateCount > 0 ? 'teammate_select' : 'playing',
+    phase: goDirectToPlaying ? 'playing' : 'teammate_select',
+    ...(goDirectToPlaying ? { currentPlayerIndex: bidderIndex } : {}),
   };
 }
 
 // ─── Teammate Conditions ─────────────────────────────────────────────────────
 
 export function setTeammateConditions(state: GameState, conditions: TeammateCondition[]): GameState {
+  const ftwCount = conditions.filter(c => c.type === 'first_trick_win').length;
+  if (ftwCount > 1) {
+    throw new Error('Only one FirstTrickWin condition is allowed per game');
+  }
+
+  const bidderIndex = state.players.findIndex(p => p.id === state.bidderId);
   return {
     ...state,
     teammateConditions: conditions,
     phase: 'playing',
+    currentPlayerIndex: bidderIndex,
   };
 }
 
