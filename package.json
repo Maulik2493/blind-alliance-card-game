@@ -11,6 +11,6 @@
     "test:watch": "npm run test:watch --workspace=packages/core"
   },
   "engines": {
-    "node": ">=18"
+    "node": "20.x"
   }
 }
