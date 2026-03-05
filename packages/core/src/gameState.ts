@@ -71,6 +71,7 @@ export function initGame(playerNames: string[]): GameState {
       collectedCards: [],
       team: 'unknown' as const,
       isRevealed: false,
+      isConnected: true,
     })),
     deckCount,
     totalPoints: deckCount === 1 ? 250 : 500,
@@ -122,6 +123,7 @@ export function addPlayerToLobby(state: GameState, playerId: string, playerName:
       collectedCards: [] as Card[],
       team: 'unknown' as const,
       isRevealed: false,
+      isConnected: true,
     },
   ];
 
@@ -168,6 +170,7 @@ export function dealCards(state: GameState): GameState {
     collectedCards: [],
     team: 'unknown' as const,
     isRevealed: false,
+    isConnected: player.isConnected,
   }));
 
   return {

@@ -13,6 +13,7 @@ export interface PublicPlayer {
   isRevealed: boolean;
   cardCount: number;
   collectedPoints: number;
+  isConnected: boolean;
 }
 
 export interface ClientGameState {
@@ -78,6 +79,9 @@ interface GameStore {
   lastError: string | null;
   gameLog: GameLogEntry[];
   isConnected: boolean;
+  isReconnecting: boolean;
+  reconnectAttempt: number;
+  disconnectedPlayers: { playerId: string; playerName: string }[];
 
   // Actions
   connect: (playerName: string, roomId?: string) => void;
@@ -193,6 +197,60 @@ export const useGameStore = create<GameStore>((set, get) => {
     addLog(`Game over — winner: ${winner}`);
   });
 
+  // ── Reconnection Events ───────────────────────────────────────────────
+
+  socket.io.on('reconnect_attempt', (attempt: number) => {
+    set({ isReconnecting: true, reconnectAttempt: attempt });
+    addLog(`Reconnecting... attempt ${attempt}`);
+  });
+
+  socket.io.on('reconnect', () => {
+    set({ isReconnecting: false, reconnectAttempt: 0 });
+    addLog('Reconnected to server');
+
+    // If we were in a game, attempt to rejoin
+    const { myPlayerName, roomId } = get();
+    if (myPlayerName && roomId) {
+      socket.emit('join_room', { playerName: myPlayerName, roomId });
+      addLog(`Rejoining room ${roomId}...`);
+    }
+  });
+
+  socket.io.on('reconnect_failed', () => {
+    set({ isReconnecting: false });
+    set({ lastError: 'Could not reconnect. Please refresh the page.' });
+    addLog('Reconnection failed after 10 attempts');
+  });
+
+  socket.on('reconnected' as any, ({ playerId, state }: { playerId: string; state: ClientGameState }) => {
+    set({ myPlayerId: playerId, ...state, myHand: sortHand(state.myHand) });
+    addLog('Successfully rejoined game');
+  });
+
+  socket.on('player_disconnected' as any, ({ playerName, reconnectWindowSeconds }: { playerName: string; reconnectWindowSeconds: number }) => {
+    addLog(`${playerName} disconnected. ${reconnectWindowSeconds}s to reconnect.`);
+    set((s) => ({
+      disconnectedPlayers: [
+        ...s.disconnectedPlayers,
+        { playerId: '', playerName },
+      ],
+    }));
+  });
+
+  socket.on('player_reconnected' as any, ({ playerName }: { playerName: string }) => {
+    addLog(`${playerName} reconnected`);
+    set((s) => ({
+      disconnectedPlayers: s.disconnectedPlayers.filter(
+        (p) => p.playerName !== playerName,
+      ),
+    }));
+  });
+
+  socket.on('player_timed_out' as any, ({ playerName }: { playerName: string }) => {
+    set({ lastError: `${playerName} timed out and has left the game.` });
+    addLog(`${playerName} timed out`);
+  });
+
   // ── Initial State + Actions ──────────────────────────────────────────────
 
   return {
@@ -226,6 +284,9 @@ export const useGameStore = create<GameStore>((set, get) => {
     lastError: null,
     gameLog: [],
     isConnected: false,
+    isReconnecting: false,
+    reconnectAttempt: 0,
+    disconnectedPlayers: [],
 
     // ── Actions ──────────────────────────────────────────────────────────
 

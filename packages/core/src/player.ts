@@ -9,4 +9,5 @@ export interface Player {
   collectedCards: Card[];
   team: 'bidder' | 'opposition' | 'unknown';
   isRevealed: boolean;
+  isConnected: boolean;
 }

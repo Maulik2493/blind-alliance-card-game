@@ -9,12 +9,14 @@ import { DebugPanel } from './components/Debug/DebugPanel';
 import { GameLog } from './components/Debug/GameLog';
 import { MobileDebugDrawer } from './components/Debug/MobileDebugDrawer';
 import { ErrorToast } from './components/shared/ErrorToast';
+import { ReconnectingBanner } from './components/shared/ReconnectingBanner';
 
 export default function App() {
   const phase = useGameStore((s) => s.phase);
 
   return (
     <div className="min-h-screen bg-amber-50 text-gray-800 flex flex-col">
+      <ReconnectingBanner />
       <ErrorToast />
 
       <div className="flex flex-1 overflow-hidden">

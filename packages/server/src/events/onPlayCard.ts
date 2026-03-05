@@ -15,8 +15,9 @@ export function handlePlayCard(
   try {
     const room = roomManager.getRoomByPlayerId(socket.id);
     if (!room) throw new Error('You are not in a room');
+    const playerId = room.getPlayerIdForSocket(socket.id);
 
-    room.applyPlayCard(socket.id, data.cardId);
+    room.applyPlayCard(playerId, data.cardId);
 
     if (room.state.phase === 'finished') {
       broadcastStateUpdate(io, room);

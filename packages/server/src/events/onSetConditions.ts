@@ -15,8 +15,9 @@ export function handleSetConditions(
   try {
     const room = roomManager.getRoomByPlayerId(socket.id);
     if (!room) throw new Error('You are not in a room');
+    const playerId = room.getPlayerIdForSocket(socket.id);
 
-    room.applySetConditions(socket.id, data.conditions);
+    room.applySetConditions(playerId, data.conditions);
     broadcastStateUpdate(io, room);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to set conditions';

@@ -2041,3 +2041,448 @@ If it is not currently included in PublicPlayer on the server, update:
   In packages/client/src/gameStore.ts, PublicPlayer type reference:
     Ensure collectedPoints: number is included.
 ```
+# PHASE 7 — Connectivity & Reliability Fixes
+
+## Apply Order
+7.1 → 7.2 → 7.3 → 7.4 → 7.5 → 7.6
+
+---
+
+## Fix 7.1 — Socket.IO heartbeat and connection settings
+```
+Update packages/server/src/index.ts
+
+Replace the Socket.IO server initialization with these settings:
+
+  const io = new Server(httpServer, {
+    cors: {
+      origin: process.env.CLIENT_URL || 'http://localhost:5173',
+      methods: ['GET', 'POST']
+    },
+    pingTimeout: 60000,       // Wait 60s before declaring connection dead
+    pingInterval: 25000,      // Send heartbeat every 25s
+    connectTimeout: 45000,    // Allow 45s to establish connection
+    transports: ['websocket', 'polling'],  // Try websocket first, fall back to polling
+    upgradeTimeout: 30000,
+    maxHttpBufferSize: 1e6
+  })
+
+These settings:
+- pingTimeout/pingInterval: keeps connections alive through mobile network
+  switches (e.g. WiFi → 4G) and prevents silent disconnects
+- transports order: websocket first for speed, polling as fallback
+  ensures Railway's proxy layer doesn't block the connection
+- connectTimeout: gives slow mobile connections more time to handshake
+```
+
+---
+
+## Fix 7.2 — Player reconnection handling on server
+```
+Update packages/server/src/GameRoom.ts
+
+Add reconnection support so a player who drops can rejoin mid-game
+and receive the current game state.
+
+── 1. Add disconnected player tracking ──────────────────────────────────────
+
+Add to GameRoom class:
+  disconnectedPlayers: Map<string, {
+    playerId: string,
+    playerName: string,
+    disconnectedAt: number,   // timestamp
+    reconnectTimer: ReturnType<typeof setTimeout> | null
+  }> = new Map()
+
+  RECONNECT_WINDOW_MS = 5 * 60 * 1000  // 5 minutes to reconnect
+
+── 2. Update handleDisconnect ───────────────────────────────────────────────
+
+Replace the existing disconnect logic in onDisconnect.ts with:
+
+  function handleDisconnect(socket: Socket, io: Server): void {
+    const room = roomManager.getRoomByPlayerId(socket.id)
+    if (!room) return
+
+    if (room.state.phase === 'lobby') {
+      room.removePlayer(socket.id)
+      if (room.state.players.length === 0) {
+        roomManager.destroyRoom(room.roomId)
+      } else {
+        io.to(room.roomId).emit('player_joined', {
+          players: room.getPublicPlayers()
+        })
+      }
+      return
+    }
+
+    // Game in progress — mark as disconnected, start reconnect window
+    const player = room.state.players.find(p => p.id === socket.id)
+    if (!player) return
+
+    room.markPlayerDisconnected(socket.id)
+
+    // Notify others
+    io.to(room.roomId).emit('player_disconnected', {
+      playerId: socket.id,
+      playerName: player.name,
+      reconnectWindowSeconds: room.RECONNECT_WINDOW_MS / 1000
+    })
+
+    // Start reconnect timer — destroy room slot after window expires
+    const timer = setTimeout(() => {
+      io.to(room.roomId).emit('player_timed_out', {
+        playerId: socket.id,
+        playerName: player.name
+      })
+      // If all players disconnected, destroy room
+      if (room.allPlayersDisconnected()) {
+        roomManager.destroyRoom(room.roomId)
+      }
+    }, room.RECONNECT_WINDOW_MS)
+
+    room.disconnectedPlayers.set(socket.id, {
+      playerId: socket.id,
+      playerName: player.name,
+      disconnectedAt: Date.now(),
+      reconnectTimer: timer
+    })
+  }
+
+── 3. Add markPlayerDisconnected to GameRoom ────────────────────────────────
+
+  markPlayerDisconnected(playerId: string): void {
+    const player = this.state.players.find(p => p.id === playerId)
+    if (player) {
+      player.isConnected = false
+    }
+  }
+
+  allPlayersDisconnected(): boolean {
+    return this.state.players.every(p => !p.isConnected)
+  }
+
+── 4. Add isConnected to Player type ────────────────────────────────────────
+
+In packages/core/src/gameState.ts, add to Player interface:
+  isConnected: boolean   // default true when player joins
+
+Initialize to true in initGame() and addPlayerToLobby().
+```
+
+---
+
+## Fix 7.3 — Reconnection handling on server (rejoin flow)
+```
+Update packages/server/src/events/onJoin.ts
+
+Handle the case where a player is rejoining an existing game
+(same player name, provides a roomId that exists and is in progress).
+
+Update handleJoinRoom():
+
+  function handleJoinRoom(
+    socket: Socket,
+    io: Server,
+    data: { playerName: string, roomId?: string, playerId?: string }
+  ): void {
+
+    If data.roomId is provided AND room exists AND room.phase !== 'lobby':
+      ← This is a reconnection attempt
+
+      // Check if this player was in the game
+      const disconnectedEntry = findDisconnectedPlayer(
+        room, data.playerName
+      )
+
+      if (disconnectedEntry) {
+        // Cancel the reconnect timer
+        if (disconnectedEntry.reconnectTimer) {
+          clearTimeout(disconnectedEntry.reconnectTimer)
+        }
+        room.disconnectedPlayers.delete(disconnectedEntry.playerId)
+
+        // Remap old playerId → new socketId
+        const oldPlayerId = disconnectedEntry.playerId
+        room.playerSocketMap.delete(oldPlayerId)
+        room.playerSocketMap.set(oldPlayerId, socket.id)
+
+        // Mark player as connected again
+        const player = room.state.players.find(p => p.id === oldPlayerId)
+        if (player) player.isConnected = true
+
+        socket.join(room.roomId)
+
+        // Send full current state to reconnected player
+        socket.emit('reconnected', {
+          playerId: oldPlayerId,
+          state: room.getSanitizedStateFor(oldPlayerId)
+        })
+
+        // Notify others
+        io.to(room.roomId).emit('player_reconnected', {
+          playerId: oldPlayerId,
+          playerName: data.playerName
+        })
+
+        broadcastStateUpdate(io, room)
+        return
+      }
+
+    // Normal join flow continues below...
+  }
+
+  function findDisconnectedPlayer(room: GameRoom, playerName: string) {
+    return [...room.disconnectedPlayers.values()].find(
+      d => room.state.players.find(
+        p => p.id === d.playerId && p.name === playerName
+      )
+    )
+  }
+```
+
+---
+
+## Fix 7.4 — Client reconnection handling
+```
+Update packages/client/src/socket.ts
+
+Replace the current socket singleton with one that has
+automatic reconnection configured:
+
+  import { io } from 'socket.io-client'
+
+  export const socket = io(
+    import.meta.env.VITE_SERVER_URL || 'http://localhost:3001',
+    {
+      autoConnect: false,
+      reconnection: true,
+      reconnectionAttempts: 10,        // Try 10 times before giving up
+      reconnectionDelay: 1000,         // Wait 1s before first retry
+      reconnectionDelayMax: 5000,      // Cap retry delay at 5s
+      randomizationFactor: 0.5,        // Add jitter to avoid thundering herd
+      timeout: 20000,                  // 20s connection timeout
+      transports: ['websocket', 'polling']
+    }
+  )
+
+  export const connectSocket = () => socket.connect()
+  export const disconnectSocket = () => socket.disconnect()
+```
+
+---
+
+## Fix 7.5 — Client reconnection state and UI
+```
+Update packages/client/src/gameStore.ts
+
+── 1. Add reconnection state ────────────────────────────────────────────────
+
+Add to store interface:
+  isReconnecting: boolean
+  reconnectAttempt: number
+  disconnectedPlayers: { playerId: string, playerName: string }[]
+
+Add to initial state:
+  isReconnecting: false,
+  reconnectAttempt: 0,
+  disconnectedPlayers: []
+
+── 2. Wire socket reconnection events ───────────────────────────────────────
+
+Add these socket listeners in setupSocketListeners():
+
+socket.on('reconnect_attempt', (attempt: number) => {
+  set({ isReconnecting: true, reconnectAttempt: attempt })
+  addLog(`Reconnecting... attempt ${attempt}`)
+})
+
+socket.on('reconnect', () => {
+  set({ isReconnecting: false, reconnectAttempt: 0 })
+  addLog('Reconnected to server')
+
+  // If we were in a game, attempt to rejoin
+  const { myPlayerName, roomId } = get()
+  if (myPlayerName && roomId) {
+    socket.emit('join_room', { playerName: myPlayerName, roomId })
+    addLog(`Rejoining room ${roomId}...`)
+  }
+})
+
+socket.on('reconnect_failed', () => {
+  set({ isReconnecting: false })
+  set({ lastError: 'Could not reconnect. Please refresh the page.' })
+  addLog('Reconnection failed after 10 attempts')
+})
+
+socket.on('reconnected', ({ playerId, state }) => {
+  set({ myPlayerId: playerId, ...state })
+  addLog('Successfully rejoined game')
+})
+
+socket.on('player_disconnected', ({ playerName, reconnectWindowSeconds }) => {
+  addLog(`${playerName} disconnected. ${reconnectWindowSeconds}s to reconnect.`)
+  set(s => ({
+    disconnectedPlayers: [
+      ...s.disconnectedPlayers,
+      { playerId: '', playerName }
+    ]
+  }))
+})
+
+socket.on('player_reconnected', ({ playerName }) => {
+  addLog(`${playerName} reconnected`)
+  set(s => ({
+    disconnectedPlayers: s.disconnectedPlayers.filter(
+      p => p.playerName !== playerName
+    )
+  }))
+})
+
+socket.on('player_timed_out', ({ playerName }) => {
+  set({ lastError: `${playerName} timed out and has left the game.` })
+  addLog(`${playerName} timed out`)
+})
+
+── 3. Add reconnection banner component ─────────────────────────────────────
+
+Create packages/client/src/components/shared/ReconnectingBanner.tsx
+
+  const isReconnecting = useGameStore(s => s.isReconnecting)
+  const attempt = useGameStore(s => s.reconnectAttempt)
+  const disconnectedPlayers = useGameStore(s => s.disconnectedPlayers)
+
+  Render at top of App.tsx above ErrorToast:
+
+  {/* Reconnecting banner — shown when this client is reconnecting */}
+  { isReconnecting && (
+    <div className="fixed top-0 left-0 right-0 z-50
+                    bg-yellow-500 text-white text-center
+                    px-4 py-3 text-sm font-semibold
+                    flex items-center justify-center gap-2">
+      <span className="animate-spin">⟳</span>
+      Reconnecting... (attempt {attempt}/10)
+    </div>
+  )}
+
+  {/* Disconnected player notice — shown when someone else drops */}
+  { disconnectedPlayers.length > 0 && !isReconnecting && (
+    <div className="fixed top-0 left-0 right-0 z-50
+                    bg-orange-400 text-white text-center
+                    px-4 py-2 text-xs font-medium">
+      {disconnectedPlayers.map(p => p.playerName).join(', ')} disconnected
+      — waiting to reconnect...
+    </div>
+  )}
+
+Add ReconnectingBanner import and render it in App.tsx above ErrorToast.
+```
+
+---
+
+## Fix 7.6 — Railway keep-alive ping
+```
+Update packages/server/src/index.ts
+
+Railway's free tier sleeps after 30 minutes of inactivity.
+Add a self-ping endpoint that keeps the process awake during active games.
+
+── 1. Add health check endpoint ─────────────────────────────────────────────
+
+  app.get('/health', (req, res) => {
+    res.json({
+      status: 'ok',
+      uptime: process.uptime(),
+      activeRooms: roomManager.getRoomCount(),
+      timestamp: new Date().toISOString()
+    })
+  })
+
+  Add getRoomCount() to RoomManager:
+    getRoomCount(): number { return this.rooms.size }
+
+── 2. Add keep-alive logic ───────────────────────────────────────────────────
+
+  Add to RoomManager:
+    hasActiveGames(): boolean {
+      return [...this.rooms.values()].some(
+        room => room.state.phase !== 'lobby' &&
+                room.state.phase !== 'finished'
+      )
+    }
+
+  In index.ts, after server starts listening, add:
+
+  // Self-ping to prevent Railway free tier sleep during active games
+  const KEEP_ALIVE_INTERVAL = 25 * 60 * 1000  // 25 minutes
+
+  setInterval(() => {
+    if (roomManager.hasActiveGames()) {
+      const url = process.env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/health`
+        : null
+
+      if (url) {
+        fetch(url)
+          .then(() => console.log('Keep-alive ping sent'))
+          .catch(err => console.warn('Keep-alive ping failed:', err.message))
+      }
+    }
+  }, KEEP_ALIVE_INTERVAL)
+
+── 3. Set RAILWAY_PUBLIC_DOMAIN environment variable on Railway ──────────────
+
+In Railway dashboard → your service → Variables, add:
+  RAILWAY_PUBLIC_DOMAIN = blind-alliance-card-game-production.up.railway.app
+  (use your actual Railway domain without https://)
+
+This ping only fires when there are active games in progress,
+so it won't waste Railway free tier hours during idle periods.
+
+── 4. Also add fetch polyfill for Node 18 compatibility ─────────────────────
+
+Node 18+ has native fetch but add this guard at the top of index.ts:
+
+  if (!globalThis.fetch) {
+    console.warn('Native fetch not available, keep-alive disabled')
+  }
+```
+
+---
+
+## Fix 7.7 — Verify reconnection end to end
+```
+Test the following scenarios after deploying all fixes:
+
+SCENARIO 1 — Client drops and reconnects quickly:
+  1. Start a 4-player game, get to the playing phase
+  2. On one player's device, turn WiFi off for 5 seconds, turn back on
+  3. Verify: reconnecting banner appears on that device
+  4. Verify: other players see "[Name] disconnected" banner
+  5. Verify: after reconnect, disconnected player sees current game state
+  6. Verify: game continues normally from where it left off
+
+SCENARIO 2 — Client drops during their turn:
+  1. It is Player B's turn to play a card
+  2. Player B disconnects
+  3. Verify: other players see disconnected notice
+  4. Player B reconnects within 5 minutes
+  5. Verify: it is still Player B's turn
+  6. Player B plays their card normally
+
+SCENARIO 3 — Client exceeds reconnect window:
+  1. Player drops, stays disconnected for 5+ minutes
+  2. Verify: "player timed out" error shown to remaining players
+  3. Verify: room is destroyed if all players time out
+
+SCENARIO 4 — Server keep-alive:
+  1. Check Railway logs after 25 minutes of an active game
+  2. Verify: "Keep-alive ping sent" appears in logs
+  3. Verify: server does NOT ping when no active games
+
+SCENARIO 5 — 6 player game stability:
+  1. Start a 6-player game
+  2. Play through 5+ complete tricks
+  3. Verify: no freezes, all players receive state updates
+  4. Verify: trick winner announcements appear on all devices
+```

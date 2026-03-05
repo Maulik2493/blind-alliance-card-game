@@ -9,6 +9,7 @@ export interface PublicPlayer {
   isRevealed: boolean;
   cardCount: number;
   collectedPoints: number;
+  isConnected: boolean;
 }
 
 // ─── Client Game State (sanitized view for one player) ──────────────────────
@@ -60,4 +61,8 @@ export interface ServerToClientEvents {
   state_update: (data: { state: ClientGameState }) => void;
   action_error: (data: { message: string }) => void;
   game_over: (data: { winner: 'bidder_team' | 'opposition_team'; summary: ScoreSummary }) => void;
+  reconnected: (data: { playerId: string; state: ClientGameState }) => void;
+  player_disconnected: (data: { playerId: string; playerName: string; reconnectWindowSeconds: number }) => void;
+  player_reconnected: (data: { playerId: string; playerName: string }) => void;
+  player_timed_out: (data: { playerId: string; playerName: string }) => void;
 }

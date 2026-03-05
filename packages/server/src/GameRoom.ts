@@ -19,6 +19,23 @@ export class GameRoom {
   state: GameState;
   playerSocketMap: Map<string, string>; // playerId → socketId
 
+  // Reconnection support
+  disconnectedPlayers: Map<string, {
+    playerId: string;
+    playerName: string;
+    disconnectedAt: number;
+    reconnectTimer: ReturnType<typeof setTimeout> | null;
+  }> = new Map();
+  RECONNECT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
+  /** Reverse lookup: given a socket ID, find the game's player ID */
+  getPlayerIdForSocket(socketId: string): string {
+    for (const [playerId, sid] of this.playerSocketMap.entries()) {
+      if (sid === socketId) return playerId;
+    }
+    return socketId; // fallback: socketId IS the playerId (normal case)
+  }
+
   constructor(roomId: string, hostPlayerId: string, hostPlayerName: string) {
     this.roomId = roomId;
     this.hostId = hostPlayerId;
@@ -150,7 +167,26 @@ export class GameRoom {
       isRevealed: p.isRevealed,
       cardCount: p.hand.length,
       collectedPoints: p.collectedCards.reduce((sum, c) => sum + c.points, 0),
+      isConnected: p.isConnected,
     }));
+  }
+
+  markPlayerDisconnected(playerId: string): void {
+    const player = this.state.players.find((p) => p.id === playerId);
+    if (player) {
+      player.isConnected = false;
+    }
+  }
+
+  markPlayerConnected(playerId: string): void {
+    const player = this.state.players.find((p) => p.id === playerId);
+    if (player) {
+      player.isConnected = true;
+    }
+  }
+
+  allPlayersDisconnected(): boolean {
+    return this.state.players.every((p) => !p.isConnected);
   }
 
   private validateCurrentPlayer(playerId: string): void {

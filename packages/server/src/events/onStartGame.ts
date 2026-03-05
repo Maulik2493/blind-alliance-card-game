@@ -12,7 +12,8 @@ export function handleStartGame(socket: TypedSocket, io: TypedServer): void {
     if (!room) {
       throw new Error('You are not in a room');
     }
-    if (socket.id !== room.hostId) {
+    const playerId = room.getPlayerIdForSocket(socket.id);
+    if (playerId !== room.hostId) {
       throw new Error('Only the host can start the game');
     }
 

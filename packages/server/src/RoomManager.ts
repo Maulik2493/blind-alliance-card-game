@@ -35,10 +35,27 @@ export class RoomManager {
     this.rooms.delete(roomId);
   }
 
+  getRoomCount(): number {
+    return this.rooms.size;
+  }
+
+  hasActiveGames(): boolean {
+    return [...this.rooms.values()].some(
+      (room) => room.state.phase !== 'lobby' && room.state.phase !== 'finished',
+    );
+  }
+
   getRoomByPlayerId(playerId: string): GameRoom | undefined {
     for (const room of this.rooms.values()) {
+      // Check direct playerId match first
       if (room.playerSocketMap.has(playerId)) {
         return room;
+      }
+      // Check if this is a socket ID mapped from a different player ID (reconnection)
+      for (const [, socketId] of room.playerSocketMap.entries()) {
+        if (socketId === playerId) {
+          return room;
+        }
       }
     }
     return undefined;

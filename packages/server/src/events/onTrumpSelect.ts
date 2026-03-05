@@ -15,8 +15,9 @@ export function handleSelectTrump(
   try {
     const room = roomManager.getRoomByPlayerId(socket.id);
     if (!room) throw new Error('You are not in a room');
+    const playerId = room.getPlayerIdForSocket(socket.id);
 
-    room.applyTrumpSelect(socket.id, data.suit);
+    room.applyTrumpSelect(playerId, data.suit);
     broadcastStateUpdate(io, room);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to select trump';

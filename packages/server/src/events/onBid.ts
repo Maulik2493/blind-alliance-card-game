@@ -14,8 +14,9 @@ export function handlePlaceBid(
   try {
     const room = roomManager.getRoomByPlayerId(socket.id);
     if (!room) throw new Error('You are not in a room');
+    const playerId = room.getPlayerIdForSocket(socket.id);
 
-    room.applyBid(socket.id, data.amount);
+    room.applyBid(playerId, data.amount);
     broadcastStateUpdate(io, room);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to place bid';
@@ -27,8 +28,9 @@ export function handlePassBid(socket: TypedSocket, io: TypedServer): void {
   try {
     const room = roomManager.getRoomByPlayerId(socket.id);
     if (!room) throw new Error('You are not in a room');
+    const playerId = room.getPlayerIdForSocket(socket.id);
 
-    room.applyPass(socket.id);
+    room.applyPass(playerId);
     broadcastStateUpdate(io, room);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to pass bid';
