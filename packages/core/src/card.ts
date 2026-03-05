@@ -33,3 +33,20 @@ export function getRankValue(rank: Rank): number {
   if (typeof rank === 'number') return rank;
   return FACE_RANK_VALUES[rank]!;
 }
+
+// ─── Hand Sorting ─────────────────────────────────────────────────────────────────────
+
+const SUIT_ORDER: Record<Suit, number> = {
+  spades: 0,
+  hearts: 1,
+  diamonds: 2,
+  clubs: 3,
+};
+
+export function sortHand(cards: Card[]): Card[] {
+  return [...cards].sort((a, b) => {
+    const suitDiff = SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
+    if (suitDiff !== 0) return suitDiff;
+    return getRankValue(b.rank) - getRankValue(a.rank);
+  });
+}

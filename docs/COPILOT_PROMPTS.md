@@ -706,3 +706,227 @@ These are documentation only — the real .env files are never committed.
 teammates and future developers use these as a reference for
 which environment variables need to be set on each platform.
 ```
+
+# PHASE 5 — UI Improvements
+
+---
+
+## Fix 5.1 — Completed trick stays visible for 2 seconds
+```
+Fix TrickArea.tsx in packages/client/src/components/GameTable/TrickArea.tsx
+
+Current bug: the trick clears too quickly when the last player plays their card,
+making it hard to see what was played.
+
+Fix using a local display buffer:
+
+1. Add two pieces of local state:
+     const [displayedPlays, setDisplayedPlays] = useState<TrickPlay[]>([])
+     const [trickWinner, setTrickWinner] = useState<string | null>(null)
+
+2. Watch the currentTrick from the store with useEffect:
+     useEffect(() => {
+       if (!currentTrick) return
+
+       // Always update displayed plays as cards come in
+       setDisplayedPlays(currentTrick.plays)
+
+       // When trick is complete (winnerId is set), hold for 2 seconds
+       if (currentTrick.winnerId) {
+         setTrickWinner(currentTrick.winnerId)
+         const timer = setTimeout(() => {
+           setDisplayedPlays([])
+           setTrickWinner(null)
+         }, 2000)
+         return () => clearTimeout(timer)
+       }
+     }, [currentTrick, currentTrick?.plays.length, currentTrick?.winnerId])
+
+3. Render from displayedPlays and trickWinner instead of directly
+   from currentTrick.plays and currentTrick.winnerId.
+
+4. When trickWinner is set, show a banner above the cards:
+     "[PlayerName] wins this trick!"
+   Use the players array from store to resolve winnerId to a name.
+   Style: text-center font-bold text-green-600 text-lg mb-2 animate-pulse
+
+5. Cleanup: cancel the timeout if the component unmounts.
+```
+
+---
+
+## Fix 5.2 — Light white/cream theme with colourful suits
+```
+Update the global theme across all components in packages/client/src/
+
+── 1. index.css or App.tsx global styles ────────────────────────────────────
+
+Change the root background from dark (bg-gray-900) to light:
+  html, body: background-color: #faf7f2  (warm cream)
+  Default text: text-gray-800
+
+── 2. App.tsx layout ────────────────────────────────────────────────────────
+
+Change outer wrapper:
+  FROM: className="min-h-screen bg-gray-900 text-white"
+  TO:   className="min-h-screen bg-amber-50 text-gray-800"
+
+Change debug sidebar:
+  FROM: className="w-80 border-l border-gray-700 flex flex-col"
+  TO:   className="w-80 border-l border-amber-200 flex flex-col bg-white shadow-inner"
+
+── 3. CardComponent.tsx ─────────────────────────────────────────────────────
+
+This is the most important visual change. Redesign the card:
+
+Card base:
+  className="rounded-xl border border-gray-200 shadow-md bg-white
+             w-16 h-24 flex flex-col justify-between p-1.5
+             cursor-pointer select-none transition-all duration-150
+             hover:shadow-lg hover:-translate-y-1"
+
+Suit colours (apply to ALL suit symbols and rank text on the card):
+  ♠ spades:   text-gray-900        (near black)
+  ♥ hearts:   text-red-500         (bright red)
+  ♦ diamonds: text-orange-500      (orange-red)
+  ♣ clubs:    text-emerald-700     (dark green)
+
+Card layout — show rank top-left and suit symbol bottom-right:
+  <div className="flex flex-col h-full">
+    <span className="text-sm font-bold leading-none">{rank}</span>
+    <span className="text-xs leading-none">{suitSymbol}</span>
+    <div className="flex-1 flex items-center justify-center">
+      <span className="text-2xl">{suitSymbol}</span>
+    </div>
+    {points > 0 && (
+      <span className="text-xs font-semibold text-amber-600 text-right">
+        {points}pts
+      </span>
+    )}
+  </div>
+
+Suit symbols: ♠ ♥ ♦ ♣
+
+Highlighted card (valid move):
+  Add: ring-2 ring-blue-400 ring-offset-1 -translate-y-2 shadow-blue-200
+
+Disabled card (invalid move):
+  Add: opacity-40 cursor-not-allowed hover:shadow-md hover:translate-y-0
+
+Face down card:
+  Replace content with a repeating diagonal pattern:
+  <div className="w-full h-full rounded-lg bg-blue-700
+                  bg-[repeating-linear-gradient(45deg,#1d4ed8,#1d4ed8_2px,#1e40af_2px,#1e40af_8px)]" />
+
+── 4. LobbyScreen.tsx ───────────────────────────────────────────────────────
+  Main card: bg-white rounded-2xl shadow-lg border border-amber-100 p-8
+  Title: text-3xl font-bold text-gray-800
+  Input fields: border border-gray-300 rounded-lg px-3 py-2 bg-white
+                focus:outline-none focus:ring-2 focus:ring-amber-400
+  Primary button: bg-amber-500 hover:bg-amber-600 text-white font-semibold
+                  px-6 py-2 rounded-lg transition-colors
+  Room code display: text-4xl font-mono font-bold tracking-widest
+                     text-amber-600 bg-amber-50 rounded-xl px-6 py-3
+
+── 5. BiddingScreen.tsx ─────────────────────────────────────────────────────
+  Panel background: bg-white rounded-2xl shadow border border-gray-100 p-4
+  Current high bid: text-2xl font-bold text-amber-600
+  Bid history rows: alternating bg-white and bg-gray-50
+  Pass button: bg-gray-100 hover:bg-gray-200 text-gray-700
+  Bid button: bg-amber-500 hover:bg-amber-600 text-white
+
+── 6. TrumpSelectScreen.tsx ─────────────────────────────────────────────────
+  Suit buttons — large, coloured, distinct:
+    ♠: bg-gray-800 text-white hover:bg-gray-900  w-24 h-24 rounded-2xl text-4xl
+    ♥: bg-red-500 text-white hover:bg-red-600
+    ♦: bg-orange-500 text-white hover:bg-orange-600
+    ♣: bg-emerald-600 text-white hover:bg-emerald-700
+  Selected suit: ring-4 ring-offset-2 ring-amber-400 scale-110
+
+── 7. GameTableScreen.tsx ───────────────────────────────────────────────────
+  Top bar: bg-white border-b border-gray-200 shadow-sm px-4 py-2
+  Trump indicator: coloured pill matching suit colour scheme above
+  Trick area background: bg-amber-50 rounded-2xl border border-amber-100
+  Score bar: bg-white border-t border-gray-200
+
+── 8. DebugPanel.tsx and GameLog.tsx ────────────────────────────────────────
+  Panel: bg-gray-50 border-l border-gray-200 text-gray-700
+  Section headers: text-gray-500 uppercase text-xs tracking-wider
+  Log text: text-emerald-700 font-mono text-xs
+  Log background: bg-white
+
+── 9. ResultsScreen.tsx ─────────────────────────────────────────────────────
+  Winner banner (bidder wins): bg-green-50 border border-green-200
+                                text-green-700 text-3xl font-bold
+  Winner banner (opposition): bg-red-50 border border-red-200 text-red-700
+  Score table: bg-white rounded-xl shadow border border-gray-100
+  Play Again button: bg-amber-500 hover:bg-amber-600 text-white
+```
+
+---
+
+## Fix 5.3 — Sort cards by suit then rank high to low
+```
+Fix in two places:
+
+── Part A: Add sort utility in packages/core/src/card.ts ────────────────────
+
+Add and export this function:
+
+  const SUIT_ORDER: Record<Suit, number> = {
+    spades: 0,
+    hearts: 1,
+    diamonds: 2,
+    clubs: 3
+  }
+
+  export function sortHand(cards: Card[]): Card[] {
+    return [...cards].sort((a, b) => {
+      // First sort by suit group
+      const suitDiff = SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit]
+      if (suitDiff !== 0) return suitDiff
+      // Within same suit, sort by rank high to low (A first, 2 last)
+      return getRankValue(b.rank) - getRankValue(a.rank)
+    })
+  }
+
+Export sortHand from packages/core/src/index.ts
+
+── Part B: Apply sort in gameStore.ts ───────────────────────────────────────
+
+Import sortHand from '@blind-alliance/core'
+
+In the socket.on('game_started') handler:
+  set({ myHand: sortHand(hand), phase })
+
+In the socket.on('state_update') handler:
+  Before calling set({ ...state }), sort the hand:
+  set({ ...state, myHand: sortHand(state.myHand) })
+
+This ensures the hand is always sorted whenever it changes —
+after dealing, after playing a card, after any state update.
+The sort is applied once on arrival, not on every render.
+
+── Part C: Add unit test ────────────────────────────────────────────────────
+
+Add to packages/core/tests/card.test.ts:
+
+  test('sortHand groups by suit then ranks high to low', () => {
+    const hand = [
+      { suit: 'hearts', rank: 2, ... },
+      { suit: 'spades', rank: 'A', ... },
+      { suit: 'hearts', rank: 'K', ... },
+      { suit: 'clubs', rank: 5, ... },
+      { suit: 'spades', rank: 3, ... },
+    ]
+    const sorted = sortHand(hand)
+    // spades first: A then 3
+    expect(sorted[0]).toMatchObject({ suit: 'spades', rank: 'A' })
+    expect(sorted[1]).toMatchObject({ suit: 'spades', rank: 3 })
+    // hearts next: K then 2
+    expect(sorted[2]).toMatchObject({ suit: 'hearts', rank: 'K' })
+    expect(sorted[3]).toMatchObject({ suit: 'hearts', rank: 2 })
+    // clubs last
+    expect(sorted[4]).toMatchObject({ suit: 'clubs', rank: 5 })
+  })
+```

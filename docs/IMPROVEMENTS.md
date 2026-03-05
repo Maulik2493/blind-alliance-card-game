@@ -1,0 +1,3 @@
+- last players card is not visible to all the players properly.
+-  A better lighter UI is needed.
+- Card shown to players need to be sorted.
