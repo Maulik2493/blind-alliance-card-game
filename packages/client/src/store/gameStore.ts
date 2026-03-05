@@ -12,6 +12,7 @@ export interface PublicPlayer {
   team: 'bidder' | 'opposition' | 'unknown';
   isRevealed: boolean;
   cardCount: number;
+  collectedPoints: number;
 }
 
 export interface ClientGameState {

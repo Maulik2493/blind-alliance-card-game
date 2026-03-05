@@ -149,6 +149,7 @@ export class GameRoom {
       team: p.team,
       isRevealed: p.isRevealed,
       cardCount: p.hand.length,
+      collectedPoints: p.collectedCards.reduce((sum, c) => sum + c.points, 0),
     }));
   }
 

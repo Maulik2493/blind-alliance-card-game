@@ -930,3 +930,1114 @@ Add to packages/core/tests/card.test.ts:
     expect(sorted[4]).toMatchObject({ suit: 'clubs', rank: 5 })
   })
 ```
+# PHASE 6 — Mobile UI (Portrait)
+
+## Apply Order
+Work through these steps EXACTLY in the order listed below.
+Do not skip ahead or apply out of order — each step builds on the previous.
+
+  6.1 → viewport meta tag (index.html)
+  6.2 → App.tsx responsive layout
+  6.3 → MobileDebugDrawer component
+  6.4 → PlayerHand fan layout
+  6.5 → GameTableScreen mobile layout
+  6.6 → BiddingScreen mobile layout
+  6.7 → TeammateSelectScreen mobile layout
+  6.8 → Verify on mobile
+
+---
+
+## Fix 6.1 — Mobile viewport meta tag (START HERE)
+```
+Open packages/client/index.html
+
+Replace the existing viewport meta tag with:
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0,
+                 maximum-scale=1.0, user-scalable=no" />
+
+Add these additional mobile meta tags inside <head> after the viewport tag:
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="theme-color" content="#faf7f2" />
+
+user-scalable=no prevents accidental zoom when double-tapping cards.
+theme-color sets the browser chrome colour to match the cream app background.
+```
+
+---
+
+## Fix 6.2 — App.tsx responsive layout
+```
+Update packages/client/src/App.tsx
+
+Replace the current layout with a responsive version that:
+- On desktop (md and above): shows game on left + debug sidebar on right
+- On mobile (below md): shows game full width + MobileDebugDrawer at bottom
+- Imports MobileDebugDrawer from './components/Debug/MobileDebugDrawer'
+
+New App.tsx:
+
+  import { useGameStore } from './gameStore'
+  import { LobbyScreen } from './components/Lobby/LobbyScreen'
+  import { BiddingScreen } from './components/Bidding/BiddingScreen'
+  import { TrumpSelectScreen } from './components/TrumpSelect/TrumpSelectScreen'
+  import { TeammateSelectScreen } from './components/TeammateSelect/TeammateSelectScreen'
+  import { GameTableScreen } from './components/GameTable/GameTableScreen'
+  import { ResultsScreen } from './components/Results/ResultsScreen'
+  import { DebugPanel } from './components/Debug/DebugPanel'
+  import { GameLog } from './components/Debug/GameLog'
+  import { MobileDebugDrawer } from './components/Debug/MobileDebugDrawer'
+  import { ErrorToast } from './components/shared/ErrorToast'
+
+  export default function App() {
+    const phase = useGameStore(s => s.phase)
+
+    return (
+      <div className="min-h-screen bg-amber-50 text-gray-800 flex flex-col">
+        <ErrorToast />
+
+        <div className="flex flex-1 overflow-hidden">
+
+          {/* Game content — full width on mobile, flex-1 on desktop */}
+          <div className="flex-1 overflow-auto p-3 md:p-4">
+            { phase === 'lobby'           && <LobbyScreen /> }
+            { phase === 'dealing'         && <LobbyScreen /> }
+            { phase === 'bidding'         && <BiddingScreen /> }
+            { phase === 'trump_select'    && <TrumpSelectScreen /> }
+            { phase === 'teammate_select' && <TeammateSelectScreen /> }
+            { phase === 'playing'         && <GameTableScreen /> }
+            { phase === 'reveal'          && <GameTableScreen /> }
+            { phase === 'finished'        && <ResultsScreen /> }
+          </div>
+
+          {/* Desktop sidebar — hidden on mobile */}
+          <div className="hidden md:flex w-80 border-l border-amber-200
+                          flex-col bg-white shadow-inner">
+            <DebugPanel />
+            <GameLog />
+          </div>
+
+        </div>
+
+        {/* Mobile bottom drawer — visible on mobile only, hidden on desktop */}
+        <div className="md:hidden">
+          <MobileDebugDrawer />
+        </div>
+
+      </div>
+    )
+  }
+```
+
+---
+
+## Fix 6.3 — MobileDebugDrawer component
+```
+Create packages/client/src/components/Debug/MobileDebugDrawer.tsx
+
+This is a bottom sheet with two states:
+  - Collapsed: a compact sticky bar at bottom showing critical info at a glance
+  - Expanded: a drawer sliding up to 75vh showing full game info
+
+NOTE: Game Log is intentionally excluded from mobile — it is not shown
+anywhere in this component. Only game-critical information is shown.
+
+── Imports and state ────────────────────────────────────────────────────────
+
+  import { useState } from 'react'
+  import { useGameStore } from '../../gameStore'
+  import type { Suit } from '@blind-alliance/core'
+
+  const [isOpen, setIsOpen] = useState(false)
+
+  const {
+    phase, trumpSuit, deckCount, minBid,
+    players, myPlayerId, bidderId,
+    currentTrick, teammateConditions,
+    bids, highestBid, bidderTeamScore, oppositionTeamScore,
+    removedCards, currentPlayerIndex
+  } = useGameStore()
+
+  const isMyTurn = useGameStore(s => s.isMyTurn())
+  const currentPlayerName = players[currentPlayerIndex]?.name ?? '—'
+
+── Helper functions ──────────────────────────────────────────────────────────
+
+  function suitSymbol(suit: Suit): string {
+    return { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' }[suit]
+  }
+
+  function suitColor(suit: Suit): string {
+    return {
+      spades: 'text-gray-900',
+      hearts: 'text-red-500',
+      diamonds: 'text-orange-500',
+      clubs: 'text-emerald-700'
+    }[suit]
+  }
+
+── Collapsed bar (always visible) ───────────────────────────────────────────
+
+  <div
+    onClick={() => setIsOpen(true)}
+    className="fixed bottom-0 left-0 right-0 z-40
+               bg-white border-t-2 border-amber-300 shadow-lg
+               px-4 py-3 flex items-center justify-between
+               cursor-pointer active:bg-amber-50"
+  >
+    {/* Left: whose turn */}
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-gray-500">Turn:</span>
+      <span className="text-sm font-bold text-gray-800 truncate max-w-[100px]">
+        {currentPlayerName}
+      </span>
+      { isMyTurn && (
+        <span className="text-xs bg-green-100 text-green-700
+                         px-2 py-0.5 rounded-full font-semibold shrink-0">
+          You!
+        </span>
+      )}
+    </div>
+
+    {/* Center: trump suit */}
+    { trumpSuit && (
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-gray-500">Trump:</span>
+        <span className={`text-xl font-bold ${suitColor(trumpSuit)}`}>
+          {suitSymbol(trumpSuit)}
+        </span>
+      </div>
+    )}
+
+    {/* Right: expand chevron */}
+    <span className="text-amber-400 text-lg font-bold">⌃</span>
+  </div>
+
+── Expanded drawer ───────────────────────────────────────────────────────────
+
+  { isOpen && (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-black/30"
+        onClick={() => setIsOpen(false)}
+      />
+
+      {/* Drawer panel */}
+      <div className="fixed bottom-0 left-0 right-0 z-50
+                      bg-white rounded-t-2xl shadow-2xl
+                      max-h-[75vh] overflow-y-auto
+                      border-t-2 border-amber-200">
+
+        {/* Handle + close button */}
+        <div className="sticky top-0 bg-white border-b border-gray-100
+                        px-4 py-3 flex items-center justify-center relative">
+          <div className="w-10 h-1 bg-gray-300 rounded-full" />
+          <button
+            onClick={() => setIsOpen(false)}
+            className="absolute right-4 text-gray-400
+                       hover:text-gray-600 text-xl leading-none"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Drawer content — NO game log */}
+        <div className="p-4 space-y-5">
+
+          {/* GAME INFO */}
+          <section>
+            <h3 className="text-gray-400 uppercase text-xs
+                           tracking-wider mb-2">Game Info</h3>
+            <div className="flex flex-wrap gap-2 text-sm">
+              <span className="bg-amber-100 text-amber-700
+                               px-3 py-1 rounded-full font-medium">
+                {phase}
+              </span>
+              { trumpSuit && (
+                <span className={`font-bold text-base ${suitColor(trumpSuit)}`}>
+                  Trump: {suitSymbol(trumpSuit)}
+                </span>
+              )}
+              <span className="text-gray-600">Decks: {deckCount}</span>
+              <span className="text-gray-600">Min Bid: {minBid}</span>
+            </div>
+            <div className="mt-2 text-sm text-gray-700">
+              Bidder: <b>{bidderTeamScore}</b> pts &nbsp;|&nbsp;
+              Opposition: <b>{oppositionTeamScore}</b> pts
+            </div>
+          </section>
+
+          {/* CURRENT TRICK */}
+          <section>
+            <h3 className="text-gray-400 uppercase text-xs
+                           tracking-wider mb-2">Current Trick</h3>
+            { currentTrick?.plays.length
+              ? currentTrick.plays.map(play => (
+                  <div key={play.playOrder}
+                       className="text-sm text-gray-700 py-0.5">
+                    <span className="font-medium">
+                      {players.find(p => p.id === play.playerId)?.name}:
+                    </span>
+                    {' '}
+                    <span className={suitColor(play.card.suit)}>
+                      {play.card.rank}{suitSymbol(play.card.suit)}
+                    </span>
+                  </div>
+                ))
+              : <p className="text-sm text-gray-400">No trick in progress</p>
+            }
+            { currentTrick?.winnerId && (
+              <p className="text-sm font-bold text-green-600 mt-1">
+                Winner: {players.find(p => p.id === currentTrick.winnerId)?.name}
+              </p>
+            )}
+          </section>
+
+          {/* TEAMMATE CONDITIONS */}
+          <section>
+            <h3 className="text-gray-400 uppercase text-xs
+                           tracking-wider mb-2">Teammate Conditions</h3>
+            { teammateConditions.length === 0
+              ? <p className="text-sm text-gray-400">None set</p>
+              : teammateConditions.map((c, i) => (
+                  <div key={i} className="flex items-center gap-2
+                                          text-sm py-0.5">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${
+                      c.collapsed ? 'bg-red-400' :
+                      c.satisfied ? 'bg-green-400' : 'bg-yellow-400'
+                    }`} />
+                    <span className="text-gray-700">
+                      { c.type === 'first_trick_win'
+                        ? 'First trick winner'
+                        : `${c.instance === 2 ? '2nd' : '1st'} ${c.rank}${suitSymbol(c.suit!)}`
+                      }
+                    </span>
+                    <span className="text-xs text-gray-400 ml-auto">
+                      { c.collapsed ? 'collapsed' :
+                        c.satisfied ? `→ ${players.find(p => p.id === c.satisfiedByPlayerId)?.name}` :
+                        'pending' }
+                    </span>
+                  </div>
+                ))
+            }
+          </section>
+
+          {/* PLAYERS */}
+          <section>
+            <h3 className="text-gray-400 uppercase text-xs
+                           tracking-wider mb-2">Players</h3>
+            { players.map((player, index) => (
+                <div
+                  key={player.id}
+                  className={`flex items-center gap-2 py-1.5 px-2
+                              rounded-lg text-sm ${
+                    index === currentPlayerIndex
+                      ? 'bg-amber-50 font-semibold' : ''
+                  }`}
+                >
+                  { index === currentPlayerIndex && (
+                    <span className="text-amber-500 text-xs">▶</span>
+                  )}
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${
+                    player.team === 'bidder' ? 'bg-blue-400' :
+                    player.team === 'opposition' ? 'bg-red-400' :
+                    'bg-gray-300'
+                  }`} />
+                  <span className="flex-1 truncate">{player.name}</span>
+                  { player.id === bidderId && (
+                    <span className="text-xs text-amber-600">★ Bidder</span>
+                  )}
+                  <span className="text-xs text-gray-400">
+                    {player.cardCount} cards
+                  </span>
+                </div>
+              ))
+            }
+          </section>
+
+          {/* BID HISTORY */}
+          <section>
+            <h3 className="text-gray-400 uppercase text-xs
+                           tracking-wider mb-2">Bid History</h3>
+            { bids.length === 0
+              ? <p className="text-sm text-gray-400">No bids yet</p>
+              : bids.map((bid, i) => (
+                  <div key={i} className="text-sm text-gray-700 py-0.5
+                                          flex justify-between">
+                    <span>{players.find(p => p.id === bid.playerId)?.name}</span>
+                    <span className={bid.amount
+                      ? 'font-bold text-amber-600'
+                      : 'text-gray-400'
+                    }>
+                      {bid.amount ?? 'Pass'}
+                    </span>
+                  </div>
+                ))
+            }
+          </section>
+
+          {/* Spacer so last section isn't hidden behind collapsed bar */}
+          <div className="h-4" />
+
+        </div>
+      </div>
+    </>
+  )}
+```
+
+---
+
+## Fix 6.4 — PlayerHand fan layout for mobile
+```
+Update packages/client/src/components/GameTable/PlayerHand.tsx
+
+On mobile portrait, cards fan/overlap so all cards are visible without scroll.
+On desktop, keep existing horizontal row layout unchanged.
+
+1. Import useEffect, useState, useRef.
+
+2. Add sorted hand — import sortHand from '@blind-alliance/core':
+     const sortedHand = sortHand(myHand)
+
+3. Mobile fan layout — wrap cards in a relative container:
+     {/* Mobile fan layout */}
+     <div className="md:hidden">
+       <div
+         className="relative mx-auto"
+         style={{
+           height: '96px',
+           width: `${Math.min(
+             64 + 44 * (sortedHand.length - 1),
+             window.innerWidth - 32
+           )}px`
+         }}
+       >
+         {sortedHand.map((card, index) => {
+           const isValid = validCards.some(
+             v => v.suit === card.suit &&
+                  v.rank === card.rank &&
+                  v.deckIndex === card.deckIndex
+           )
+           return (
+             <div
+               key={`${card.suit}-${card.rank}-${card.deckIndex}`}
+               className={`absolute transition-transform duration-150 ${
+                 isValid && isMyTurn ? '-translate-y-3' : ''
+               }`}
+               style={{ left: `${index * 44}px`, zIndex: index }}
+             >
+               <CardComponent
+                 card={card}
+                 onClick={isMyTurn && isValid
+                   ? () => store.playCard(card) : undefined}
+                 disabled={!isMyTurn || !isValid}
+                 highlighted={isMyTurn && isValid}
+               />
+             </div>
+           )
+         })}
+       </div>
+     </div>
+
+     {/* Desktop row layout — unchanged */}
+     <div className="hidden md:flex flex-wrap gap-1">
+       {sortedHand.map(card => (
+         <CardComponent ... />
+       ))}
+     </div>
+
+4. Wrap the entire PlayerHand in pb-16 md:pb-0 to prevent
+   content hiding behind the mobile bottom drawer bar:
+     <div className="pb-16 md:pb-0">
+       ...hand layouts...
+     </div>
+```
+
+---
+
+## Fix 6.5 — GameTableScreen mobile layout
+```
+Update packages/client/src/components/GameTable/GameTableScreen.tsx
+
+1. Wrap entire screen in:
+     <div className="flex flex-col h-full pb-14 md:pb-0">
+
+2. Top bar — compact on mobile:
+     <div className="flex items-center justify-between
+                     px-3 py-2 bg-white border-b border-gray-200 shadow-sm
+                     text-sm md:text-base shrink-0">
+       { trumpSuit
+         ? <span className={`font-bold text-lg ${suitColor(trumpSuit)}`}>
+             {suitSymbol(trumpSuit)} Trump
+           </span>
+         : <span className="text-gray-400 text-sm">No trump yet</span>
+       }
+       <span className="text-gray-600 text-xs md:text-sm font-medium">
+         Trick {tricks.length + 1}
+       </span>
+       <span className="text-xs text-gray-500">
+         Bid: <b>{highestBid?.amount ?? '—'}</b>
+       </span>
+     </div>
+
+3. Whose turn — mobile only banner below top bar:
+     <div className="md:hidden px-3 py-2 text-center shrink-0
+                     bg-amber-50 border-b border-amber-100">
+       { isMyTurn
+         ? <span className="text-green-600 font-bold text-sm">
+             ✓ Your turn — tap a card to play
+           </span>
+         : <span className="text-gray-500 text-sm">
+             Waiting for {currentPlayer?.name}...
+           </span>
+       }
+     </div>
+
+4. Trick area — flex-1 so it fills available space:
+     <div className="flex-1 flex items-center justify-center
+                     p-2 md:p-6 bg-amber-50 min-h-0">
+       <TrickArea />
+     </div>
+
+5. Score bar — compact on mobile:
+     <div className="shrink-0 px-3 py-2 bg-white
+                     border-t border-gray-200
+                     flex justify-between text-xs md:text-sm">
+       <span className="text-gray-600">
+         Bidder: <b className="text-amber-600">{bidderTeamScore}</b>
+         /{highestBid?.amount}
+       </span>
+       <span className="text-gray-600">
+         Opposition: <b>{oppositionTeamScore}</b>
+       </span>
+     </div>
+
+6. PlayerHand — already has pb-16 from Fix 6.4, just render it:
+     <div className="shrink-0 bg-white border-t border-gray-100 p-2">
+       <PlayerHand />
+     </div>
+```
+
+---
+
+## Fix 6.6 — BiddingScreen mobile layout
+```
+Update packages/client/src/components/Bidding/BiddingScreen.tsx
+
+1. Add local state for hand toggle:
+     const [showHand, setShowHand] = useState(false)
+
+2. Layout wrapper — stacked on mobile, side by side on desktop:
+     <div className="flex flex-col md:flex-row gap-4 pb-16 md:pb-0">
+
+3. Hand section — toggle on mobile, always visible on desktop:
+     <div className="md:flex-1">
+       <button
+         className="md:hidden text-sm text-amber-600
+                    underline mb-2 block"
+         onClick={() => setShowHand(!showHand)}
+       >
+         {showHand ? 'Hide my hand ▲' : 'Show my hand ▼'}
+       </button>
+       <div className={showHand ? 'block' : 'hidden md:block'}>
+         <p className="text-xs text-gray-500 mb-1 font-semibold uppercase
+                       tracking-wide">Your Hand</p>
+         <PlayerHand disabled />
+       </div>
+     </div>
+
+4. Bidding panel — full width on mobile:
+     <div className="md:flex-1 bg-white rounded-2xl shadow
+                     border border-gray-100 p-4 space-y-4">
+
+5. Bid number input — large tap target:
+     <input
+       type="number"
+       className="w-full text-center text-2xl font-bold
+                  border-2 border-amber-300 rounded-xl px-4 py-3
+                  focus:outline-none focus:ring-2 focus:ring-amber-400"
+       min={nextValidBid(highestBid?.amount ?? null, deckCount)}
+       step={5}
+     />
+
+6. Action buttons — full width stacked on mobile:
+     <div className="flex flex-col md:flex-row gap-2">
+       <button className="flex-1 py-4 md:py-2 text-base font-bold
+                          bg-amber-500 hover:bg-amber-600
+                          text-white rounded-xl transition-colors">
+         Place Bid
+       </button>
+       <button className="flex-1 py-4 md:py-2 text-base font-semibold
+                          bg-gray-100 hover:bg-gray-200
+                          text-gray-700 rounded-xl transition-colors">
+         Pass
+       </button>
+     </div>
+```
+
+---
+
+## Fix 6.7 — TeammateSelectScreen mobile layout
+```
+Update packages/client/src/components/TeammateSelect/TeammateSelectScreen.tsx
+
+1. Wrap entire screen in:
+     <div className="pb-16 md:pb-0 space-y-4">
+
+2. Each condition slot as a card:
+     <div className="bg-white rounded-2xl border border-amber-100
+                     shadow-sm p-4 space-y-3">
+
+3. Mode toggle — large tap-friendly full-width buttons:
+     <div className="flex rounded-xl overflow-hidden
+                     border-2 border-amber-200">
+       <button
+         onClick={() => setMode('card_reveal')}
+         className={`flex-1 py-3 text-sm font-semibold transition-colors ${
+           mode === 'card_reveal'
+             ? 'bg-amber-500 text-white'
+             : 'bg-white text-gray-600'
+         }`}
+       >
+         Card Reveal
+       </button>
+       <button
+         onClick={() => setMode('first_trick_win')}
+         disabled={firstTrickWinAlreadyUsed}
+         className={`flex-1 py-3 text-sm font-semibold transition-colors
+                     disabled:opacity-40 disabled:cursor-not-allowed ${
+           mode === 'first_trick_win'
+             ? 'bg-amber-500 text-white'
+             : 'bg-white text-gray-600'
+         }`}
+       >
+         First Trick Win
+       </button>
+     </div>
+
+4. Dropdowns — full width, large tap targets, native mobile picker:
+     <select className="w-full border-2 border-gray-200 rounded-xl
+                        px-3 py-3 text-base bg-white
+                        focus:outline-none focus:ring-2
+                        focus:ring-amber-400 focus:border-transparent">
+
+5. Confirm button — sticky above mobile drawer:
+     <div className="sticky bottom-14 md:static px-0 py-3
+                     md:bg-transparent">
+       <button
+         disabled={!allSlotsFilled}
+         className="w-full md:w-auto py-4 md:py-2 px-6
+                    text-base font-bold text-white rounded-xl
+                    transition-colors
+                    bg-amber-500 hover:bg-amber-600
+                    disabled:opacity-40 disabled:cursor-not-allowed"
+       >
+         Confirm Teammates
+       </button>
+     </div>
+```
+
+---
+
+## Fix 6.8 — Verify on mobile (DO THIS LAST)
+```
+Test using browser DevTools with a portrait phone viewport (390x844).
+Also test on a real mobile device if possible.
+
+Work through each scenario in order:
+
+SCENARIO 1 — Lobby
+  [ ] Name input full width, easy to type
+  [ ] Join button large enough to tap
+  [ ] Room code large and readable
+  [ ] Debug panel NOT visible anywhere
+  [ ] Collapsed bottom bar shows: Turn, Trump, expand chevron
+
+SCENARIO 2 — Bottom drawer
+  [ ] Tapping collapsed bar opens the drawer
+  [ ] Drawer height is 75vh max, scrollable
+  [ ] Backdrop tap closes drawer
+  [ ] Game Info section shows phase, trump, deck count, scores
+  [ ] Current Trick section shows cards played
+  [ ] Teammate Conditions shows colour-coded dots
+  [ ] Players section highlights current player with amber row
+  [ ] Bid History shows all bids/passes
+  [ ] Game Log is NOT shown anywhere on mobile
+  [ ] Bottom spacer prevents last section hiding behind bar
+
+SCENARIO 3 — Bidding
+  [ ] Single column layout — no overflow
+  [ ] Show/hide hand toggle works
+  [ ] Bid input large, steps in 5s correctly
+  [ ] Place Bid and Pass buttons full width, easy to tap
+
+SCENARIO 4 — Trump select
+  [ ] 4 large suit buttons visible without scrolling
+  [ ] Buttons easy to tap
+
+SCENARIO 5 — Teammate select
+  [ ] Condition slots stacked vertically as cards
+  [ ] Mode toggle buttons large and easy to tap
+  [ ] Dropdowns open native mobile picker
+  [ ] Confirm button sticky above bottom drawer bar
+  [ ] First Trick Win disabled on other slots once used
+
+SCENARIO 6 — Playing (Game Table)
+  [ ] Top bar compact, fits in one row
+  [ ] "Your turn" banner visible below top bar
+  [ ] Trick area centered and visible
+  [ ] Cards fan/overlap — all cards visible
+  [ ] Valid cards lifted with -translate-y-3
+  [ ] Tapping a valid card plays it
+  [ ] Invalid cards not tappable
+  [ ] Score bar visible above bottom drawer bar
+  [ ] No content hidden behind bottom bar
+
+SCENARIO 7 — Results
+  [ ] Score summary readable without horizontal scroll
+  [ ] Play Again button easy to tap
+  [ ] No content hidden behind bottom bar
+
+If any scenario fails, fix it before deploying.
+After all scenarios pass: commit, push, and Vercel will auto-deploy.
+```
+
+# PHASE 6 — Mobile Fixes (Patch Round 2)
+
+Apply in this order: 6.9 → 6.10 → 6.11 → 6.12 → 6.13
+
+---
+
+## Fix 6.9 — Bid input: quick-select chips on mobile
+```
+Update packages/client/src/components/Bidding/BiddingScreen.tsx
+
+Replace the plain number input on mobile with a chip-based bid selector.
+Keep the existing number input for desktop (md+) unchanged.
+
+── Mobile bid selector ───────────────────────────────────────────────────────
+
+Add local state:
+  const [currentBid, setCurrentBid] = useState(
+    nextValidBid(highestBid?.amount ?? null, deckCount)
+  )
+
+  // Reset currentBid whenever highestBid changes
+  useEffect(() => {
+    setCurrentBid(nextValidBid(highestBid?.amount ?? null, deckCount))
+  }, [highestBid?.amount, deckCount])
+
+Render this on mobile (md:hidden):
+
+  {/* Current bid display */}
+  <div className="text-center">
+    <span className="text-xs text-gray-500 uppercase tracking-wide">
+      Your Bid
+    </span>
+    <div className="text-4xl font-bold text-amber-600 my-2">
+      {currentBid}
+    </div>
+    <span className="text-xs text-gray-400">
+      Min: {nextValidBid(highestBid?.amount ?? null, deckCount)}
+    </span>
+  </div>
+
+  {/* Quick-add chips */}
+  <div>
+    <p className="text-xs text-gray-500 mb-2 text-center">Add to bid:</p>
+    <div className="flex gap-2 justify-center flex-wrap">
+      {[5, 10, 25, 50].map(increment => {
+        const newAmount = currentBid + increment
+        const isValid = newAmount % 5 === 0
+        return (
+          <button
+            key={increment}
+            onClick={() => setCurrentBid(newAmount)}
+            className="px-4 py-2 bg-amber-100 hover:bg-amber-200
+                       text-amber-700 font-bold rounded-xl
+                       text-sm transition-colors active:scale-95"
+          >
+            +{increment}
+          </button>
+        )
+      })}
+    </div>
+  </div>
+
+  {/* Quick-subtract chips */}
+  <div>
+    <p className="text-xs text-gray-500 mb-2 text-center">Remove from bid:</p>
+    <div className="flex gap-2 justify-center flex-wrap">
+      {[5, 10, 25, 50].map(decrement => {
+        const newAmount = currentBid - decrement
+        const minBidValue = nextValidBid(highestBid?.amount ?? null, deckCount)
+        const disabled = newAmount < minBidValue
+        return (
+          <button
+            key={decrement}
+            onClick={() => !disabled && setCurrentBid(newAmount)}
+            disabled={disabled}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200
+                       text-gray-600 font-bold rounded-xl text-sm
+                       transition-colors active:scale-95
+                       disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            -{decrement}
+          </button>
+        )
+      })}
+    </div>
+  </div>
+
+  {/* Action buttons */}
+  <div className="flex flex-col gap-2 mt-2">
+    <button
+      onClick={() => store.placeBid(currentBid)}
+      disabled={!isMyTurn}
+      className="w-full py-4 text-base font-bold text-white
+                 bg-amber-500 hover:bg-amber-600 rounded-xl
+                 disabled:opacity-40 disabled:cursor-not-allowed
+                 transition-colors active:scale-95"
+    >
+      Place Bid: {currentBid}
+    </button>
+    <button
+      onClick={() => store.passBid()}
+      disabled={!isMyTurn}
+      className="w-full py-4 text-base font-semibold text-gray-700
+                 bg-gray-100 hover:bg-gray-200 rounded-xl
+                 disabled:opacity-40 disabled:cursor-not-allowed
+                 transition-colors"
+    >
+      Pass
+    </button>
+  </div>
+```
+
+---
+
+## Fix 6.10 — Hand cards: fix overflow on mobile
+```
+Update packages/client/src/components/GameTable/PlayerHand.tsx
+
+The current fan layout calculates width based on a fixed 320px estimate
+which causes cards to overflow on some screen sizes.
+
+Replace the mobile fan layout with a scroll-based approach that
+dynamically calculates the offset to always fit within the screen:
+
+  {/* Mobile layout */}
+  <div className="md:hidden w-full overflow-x-auto pb-2">
+    <div
+      className="relative mx-auto"
+      style={{
+        height: '112px',
+        width: `${Math.min(
+          64 + 44 * Math.max(sortedHand.length - 1, 0),
+          sortedHand.length * 44 + 20
+        )}px`,
+        minWidth: '100%'
+      }}
+    >
+      {sortedHand.map((card, index) => {
+        const isValid = validCards.some(
+          v => v.suit === card.suit &&
+               v.rank === card.rank &&
+               v.deckIndex === card.deckIndex
+        )
+        const offset = sortedHand.length <= 8
+          ? 44
+          : Math.floor((window.innerWidth - 48) / (sortedHand.length - 1))
+
+        return (
+          <div
+            key={`${card.suit}-${card.rank}-${card.deckIndex}`}
+            className={`absolute transition-transform duration-150 ${
+              isMyTurn && isValid ? '-translate-y-3' : 'translate-y-0'
+            }`}
+            style={{
+              left: `${index * offset}px`,
+              zIndex: index
+            }}
+          >
+            <CardComponent
+              card={card}
+              onClick={isMyTurn && isValid
+                ? () => store.playCard(card)
+                : undefined}
+              disabled={!isMyTurn || !isValid}
+              highlighted={isMyTurn && isValid}
+            />
+          </div>
+        )
+      })}
+    </div>
+  </div>
+
+Key changes from previous version:
+- offset is now dynamic: shrinks automatically when there are more than 8 cards
+  so cards always fit within screen width
+- Container has minWidth: 100% so it always fills the hand area
+- overflow-x-auto added as a fallback in case cards still overflow
+  (e.g. 13+ cards in a 2-deck game)
+- Height increased to 112px to give room for the -translate-y-3 lift
+  without clipping the top of lifted cards
+```
+
+---
+
+## Fix 6.11 — TeammateSelector rank dropdown: fix overflow
+```
+Update packages/client/src/components/TeammateSelect/TeammateSelectScreen.tsx
+
+The rank dropdown is going off screen because it uses an HTML <select>
+which on some mobile browsers renders the dropdown list below the element
+and can overflow the viewport.
+
+Fix 1: Force native picker behavior with proper sizing:
+  Replace any custom dropdown with a standard <select> that uses
+  the device's native picker (which slides up from the bottom on iOS/Android):
+
+  <select
+    value={selectedRank ?? ''}
+    onChange={e => setSelectedRank(e.target.value as Rank)}
+    className="w-full border-2 border-gray-200 rounded-xl
+               px-3 py-3 text-base bg-white appearance-none
+               focus:outline-none focus:ring-2 focus:ring-amber-400"
+    size={1}   ← size=1 forces native dropdown behavior on mobile
+  >
+    <option value="" disabled>Select rank...</option>
+    {availableRanks.map(rank => (
+      <option key={String(rank)} value={String(rank)}>
+        {rank} {rank === 'A' ? '(Ace)' : ''}
+      </option>
+    ))}
+  </select>
+
+Fix 2: Wrap all three dropdowns (suit, rank, instance) in a div
+  that prevents any child from overflowing the screen:
+
+  <div className="space-y-3 w-full overflow-hidden">
+    {/* Suit dropdown */}
+    <div className="w-full">
+      <label className="text-xs text-gray-500 mb-1 block">Suit</label>
+      <select className="w-full ..." ...>
+    </div>
+
+    {/* Rank dropdown */}
+    <div className="w-full">
+      <label className="text-xs text-gray-500 mb-1 block">Rank</label>
+      <select className="w-full ..." ...>
+    </div>
+
+    {/* Instance dropdown — only shown for 2-deck with 2 instances */}
+    { showInstance && (
+      <div className="w-full">
+        <label className="text-xs text-gray-500 mb-1 block">Instance</label>
+        <select className="w-full ..." ...>
+      </div>
+    )}
+  </div>
+
+Fix 3: Ensure the entire TeammateSelectScreen has overflow-hidden
+  on its outer wrapper so nothing bleeds outside the viewport:
+  <div className="pb-16 md:pb-0 space-y-4 overflow-hidden w-full">
+```
+
+---
+
+## Fix 6.12 — Mobile bottom bar: show more critical info
+```
+Update packages/client/src/components/Debug/MobileDebugDrawer.tsx
+
+The collapsed bar currently only shows whose turn it is and the trump suit.
+Expand it to show more critical info in a compact two-row layout.
+
+Replace the single-row collapsed bar with this two-row layout:
+
+  <div
+    onClick={() => setIsOpen(true)}
+    className="fixed bottom-0 left-0 right-0 z-40
+               bg-white border-t-2 border-amber-300 shadow-lg
+               cursor-pointer active:bg-amber-50"
+  >
+    {/* Row 1: Turn + Trump + expand button */}
+    <div className="flex items-center justify-between px-4 py-2
+                    border-b border-amber-100">
+
+      {/* Whose turn */}
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-xs text-gray-500 shrink-0">Turn:</span>
+        <span className="text-sm font-bold text-gray-800 truncate">
+          {currentPlayerName}
+        </span>
+        { isMyTurn && (
+          <span className="text-xs bg-green-100 text-green-700
+                           px-2 py-0.5 rounded-full font-semibold shrink-0">
+            You!
+          </span>
+        )}
+      </div>
+
+      {/* Trump */}
+      { trumpSuit && (
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-xs text-gray-500">Trump:</span>
+          <span className={`text-xl font-bold ${suitColor(trumpSuit)}`}>
+            {suitSymbol(trumpSuit)}
+          </span>
+        </div>
+      )}
+
+      {/* Expand */}
+      <span className="text-amber-400 text-lg font-bold shrink-0 ml-2">
+        ⌃
+      </span>
+    </div>
+
+    {/* Row 2: Bid winner + Conditions summary + Points */}
+    <div className="flex items-center justify-between px-4 py-1.5
+                    text-xs text-gray-600 gap-3">
+
+      {/* Bid winner */}
+      <div className="flex items-center gap-1 min-w-0">
+        <span className="text-gray-400 shrink-0">Bid:</span>
+        <span className="font-semibold truncate">
+          { bidderId
+            ? `${players.find(p => p.id === bidderId)?.name}
+               (${highestBid?.amount})`
+            : '—'
+          }
+        </span>
+      </div>
+
+      {/* Conditions summary */}
+      { teammateConditions.length > 0 && (
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-gray-400">Cond:</span>
+          <div className="flex gap-0.5">
+            {teammateConditions.map((c, i) => (
+              <span
+                key={i}
+                className={`w-2 h-2 rounded-full inline-block ${
+                  c.collapsed ? 'bg-red-400' :
+                  c.satisfied ? 'bg-green-400' :
+                  'bg-yellow-400'
+                }`}
+                title={
+                  c.collapsed ? 'Collapsed' :
+                  c.satisfied
+                    ? `Satisfied by ${players.find(p => p.id === c.satisfiedByPlayerId)?.name}`
+                    : 'Pending'
+                }
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Scores */}
+      <div className="flex items-center gap-1 shrink-0">
+        <span className="text-blue-500 font-semibold">
+          B:{bidderTeamScore}
+        </span>
+        <span className="text-gray-300">|</span>
+        <span className="text-red-500 font-semibold">
+          O:{oppositionTeamScore}
+        </span>
+      </div>
+
+    </div>
+  </div>
+```
+
+---
+
+## Fix 6.13 — Show per-player points in MobileDebugDrawer expanded view
+```
+Update the PLAYERS section inside the expanded drawer in
+packages/client/src/components/Debug/MobileDebugDrawer.tsx
+
+Replace the existing players section with this updated version
+that shows each player's collected points:
+
+  <section>
+    <h3 className="text-gray-400 uppercase text-xs
+                   tracking-wider mb-2">Players</h3>
+    { players.map((player, index) => (
+        <div
+          key={player.id}
+          className={`flex items-center gap-2 py-2 px-2
+                      rounded-lg text-sm mb-1 ${
+            index === currentPlayerIndex
+              ? 'bg-amber-50 border border-amber-200' : ''
+          }`}
+        >
+          {/* Turn indicator */}
+          <span className="w-3 shrink-0">
+            { index === currentPlayerIndex
+              ? <span className="text-amber-500 text-xs">▶</span>
+              : null
+            }
+          </span>
+
+          {/* Team colour dot */}
+          <span className={`w-2 h-2 rounded-full shrink-0 ${
+            player.team === 'bidder' ? 'bg-blue-400' :
+            player.team === 'opposition' ? 'bg-red-400' :
+            'bg-gray-300'
+          }`} />
+
+          {/* Name */}
+          <span className="flex-1 truncate font-medium">
+            {player.name}
+            { player.id === myPlayerId && (
+              <span className="text-xs text-gray-400 ml-1">(you)</span>
+            )}
+          </span>
+
+          {/* Bidder star */}
+          { player.id === bidderId && (
+            <span className="text-xs text-amber-600 shrink-0">★</span>
+          )}
+
+          {/* Cards remaining */}
+          <span className="text-xs text-gray-400 shrink-0">
+            {player.cardCount}🃏
+          </span>
+
+          {/* Points collected */}
+          <span className={`text-xs font-bold shrink-0 px-2 py-0.5
+                            rounded-full ${
+            player.team === 'bidder'
+              ? 'bg-blue-50 text-blue-600'
+              : player.team === 'opposition'
+              ? 'bg-red-50 text-red-600'
+              : 'bg-gray-100 text-gray-500'
+          }`}>
+            {player.collectedPoints ?? 0}pts
+          </span>
+
+        </div>
+      ))
+    }
+  </section>
+
+NOTE: player.collectedPoints must be available in PublicPlayer type.
+If it is not currently included in PublicPlayer on the server, update:
+
+  In packages/server/src/GameRoom.ts, getPublicPlayers():
+    Add to each PublicPlayer:
+      collectedPoints: state.players.find(p => p.id === player.id)
+                        ?.collectedCards.reduce((sum, c) => sum + c.points, 0)
+                        ?? 0
+
+  In packages/server/src/events.ts, update PublicPlayer interface:
+    collectedPoints: number
+
+  In packages/client/src/gameStore.ts, PublicPlayer type reference:
+    Ensure collectedPoints: number is included.
+```

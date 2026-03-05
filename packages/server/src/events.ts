@@ -8,6 +8,7 @@ export interface PublicPlayer {
   team: 'bidder' | 'opposition' | 'unknown';
   isRevealed: boolean;
   cardCount: number;
+  collectedPoints: number;
 }
 
 // ─── Client Game State (sanitized view for one player) ──────────────────────

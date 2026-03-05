@@ -1,11 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useGameStore } from '../../store/gameStore';
-import { CardComponent } from '../shared/CardComponent';
+import { PlayerHand } from '../GameTable/PlayerHand';
 import { nextValidBid } from '@blind-alliance/core';
 
 export function BiddingScreen() {
   const players = useGameStore((s) => s.players);
-  const myHand = useGameStore((s) => s.myHand);
   const bids = useGameStore((s) => s.bids);
   const highestBid = useGameStore((s) => s.highestBid);
   const minBid = useGameStore((s) => s.minBid);
@@ -19,26 +18,36 @@ export function BiddingScreen() {
   const current = currentPlayer();
   const minimumBid = nextValidBid(highestBid?.amount ?? null, deckCount as 1 | 2);
   const [bidAmount, setBidAmount] = useState(minimumBid);
+  const [showHand, setShowHand] = useState(false);
+  const [currentBid, setCurrentBid] = useState(minimumBid);
 
   // Keep bidAmount in sync with minimumBid changes
   if (bidAmount < minimumBid) {
     setBidAmount(minimumBid);
   }
 
+  // Reset currentBid whenever highestBid changes
+  useEffect(() => {
+    setCurrentBid(nextValidBid(highestBid?.amount ?? null, deckCount as 1 | 2));
+  }, [highestBid?.amount, deckCount]);
+
   return (
-    <div className="flex gap-8 h-full">
-      {/* Left: My Hand */}
-      <div className="flex-1">
-        <h2 className="text-lg font-bold mb-3">Your Hand</h2>
-        <div className="flex flex-wrap gap-2">
-          {myHand.map((card, i) => (
-            <CardComponent key={i} card={card} disabled />
-          ))}
+    <div className="flex flex-col md:flex-row gap-4 pb-16 md:pb-0">
+      {/* Left/Top: My Hand */}
+      <div className="md:flex-1">
+        <button
+          className="md:hidden text-sm text-amber-600 underline mb-2 block"
+          onClick={() => setShowHand(!showHand)}
+        >
+          {showHand ? 'Hide my hand ▲' : 'Show my hand ▼'}
+        </button>
+        <div className={showHand ? 'block' : 'hidden md:block'}>
+          <PlayerHand disabled />
         </div>
       </div>
 
-      {/* Right: Bidding Panel */}
-      <div className="w-80 bg-white rounded-2xl p-6 space-y-4 shadow border border-gray-100">
+      {/* Right/Bottom: Bidding Panel */}
+      <div className="md:w-80 bg-white rounded-2xl p-4 md:p-6 space-y-4 shadow border border-gray-100">
         <h2 className="text-lg font-bold text-gray-800">Bidding</h2>
 
         <div className="text-sm text-gray-600">
@@ -74,32 +83,99 @@ export function BiddingScreen() {
         {myTurn ? (
           <div className="space-y-3 border-t border-gray-200 pt-3">
             <p className="text-green-600 font-semibold text-sm">Your turn to bid!</p>
-            <div className="flex gap-2 items-center">
+
+            {/* Desktop: number input */}
+            <div className="hidden md:block">
               <input
                 type="number"
                 value={bidAmount}
                 onChange={(e) => setBidAmount(Math.max(minimumBid, parseInt(e.target.value) || minimumBid))}
                 min={minimumBid}
                 step={5}
-                className="w-24 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                className="w-full text-center text-2xl font-bold border-2 border-amber-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
               />
-              <button
-                onClick={() => {
-                  if (bidAmount % 5 !== 0) return;
-                  placeBid(bidAmount);
-                }}
-                disabled={bidAmount % 5 !== 0 || bidAmount < minimumBid}
-                className="bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold px-4 py-2 rounded-lg transition-colors cursor-pointer"
-              >
-                Place Bid
-              </button>
+              <div className="flex flex-row gap-2 mt-3">
+                <button
+                  onClick={() => {
+                    if (bidAmount % 5 !== 0) return;
+                    placeBid(bidAmount);
+                  }}
+                  disabled={bidAmount % 5 !== 0 || bidAmount < minimumBid}
+                  className="flex-1 py-2 text-base font-bold bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-xl transition-colors cursor-pointer"
+                >
+                  Place Bid
+                </button>
+                <button
+                  onClick={() => passBid()}
+                  className="flex-1 py-2 text-base font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors cursor-pointer"
+                >
+                  Pass
+                </button>
+              </div>
             </div>
-            <button
-              onClick={() => passBid()}
-              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 rounded-lg transition-colors cursor-pointer"
-            >
-              Pass
-            </button>
+
+            {/* Mobile: chip-based bid selector */}
+            <div className="md:hidden space-y-3">
+              {/* Current bid display */}
+              <div className="text-center">
+                <span className="text-xs text-gray-500 uppercase tracking-wide">Your Bid</span>
+                <div className="text-4xl font-bold text-amber-600 my-2">{currentBid}</div>
+                <span className="text-xs text-gray-400">Min: {minimumBid}</span>
+              </div>
+
+              {/* Quick-add chips */}
+              <div>
+                <p className="text-xs text-gray-500 mb-2 text-center">Add to bid:</p>
+                <div className="flex gap-2 justify-center flex-wrap">
+                  {[5, 10, 25, 50].map((increment) => (
+                    <button
+                      key={increment}
+                      onClick={() => setCurrentBid(currentBid + increment)}
+                      className="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-700 font-bold rounded-xl text-sm transition-colors active:scale-95"
+                    >
+                      +{increment}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick-subtract chips */}
+              <div>
+                <p className="text-xs text-gray-500 mb-2 text-center">Remove from bid:</p>
+                <div className="flex gap-2 justify-center flex-wrap">
+                  {[5, 10, 25, 50].map((decrement) => {
+                    const newAmount = currentBid - decrement;
+                    const disabled = newAmount < minimumBid;
+                    return (
+                      <button
+                        key={decrement}
+                        onClick={() => !disabled && setCurrentBid(newAmount)}
+                        disabled={disabled}
+                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl text-sm transition-colors active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        -{decrement}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex flex-col gap-2 mt-2">
+                <button
+                  onClick={() => placeBid(currentBid)}
+                  className="w-full py-4 text-base font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-colors active:scale-95 cursor-pointer"
+                >
+                  Place Bid: {currentBid}
+                </button>
+                <button
+                  onClick={() => passBid()}
+                  className="w-full py-4 text-base font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+                >
+                  Pass
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="border-t border-gray-200 pt-3">

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useGameStore } from '../../store/gameStore';
-import { CardComponent } from '../shared/CardComponent';
+import { PlayerHand } from '../GameTable/PlayerHand';
 import type { Suit, Rank } from '@blind-alliance/core';
 import type { TeammateCondition, CardRevealCondition, FirstTrickWinCondition } from '@blind-alliance/core';
 
@@ -26,7 +26,6 @@ export function TeammateSelectScreen() {
   const deckCount = useGameStore((s) => s.deckCount);
   const availableConditionCards = useGameStore((s) => s.availableConditionCards);
   const trumpSuit = useGameStore((s) => s.trumpSuit);
-  const myHand = useGameStore((s) => s.myHand);
   const players = useGameStore((s) => s.players);
   const bidderId = useGameStore((s) => s.bidderId);
   const setTeammateConditions = useGameStore((s) => s.setTeammateConditions);
@@ -117,18 +116,13 @@ export function TeammateSelectScreen() {
 
   if (!isBidder) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 pb-16 md:pb-0">
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-2">Teammate Selection</h2>
           <p className="text-gray-400">Waiting for {bidderName} to select teammate conditions...</p>
         </div>
         <div>
-          <h3 className="text-lg font-bold mb-3">Your Hand</h3>
-          <div className="flex flex-wrap gap-2">
-            {myHand.map((card, i) => (
-              <CardComponent key={i} card={card} disabled />
-            ))}
-          </div>
+          <PlayerHand disabled />
         </div>
       </div>
     );
@@ -144,7 +138,7 @@ export function TeammateSelectScreen() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="pb-16 md:pb-0 space-y-4 overflow-hidden w-full">
       <div className="text-center">
         <h2 className="text-2xl font-bold mb-1">Select Teammate Conditions</h2>
         <p className="text-gray-500">
@@ -155,12 +149,7 @@ export function TeammateSelectScreen() {
 
       {/* My hand */}
       <div>
-        <h3 className="text-lg font-bold mb-3">Your Hand</h3>
-        <div className="flex flex-wrap gap-2">
-          {myHand.map((card, i) => (
-            <CardComponent key={i} card={card} disabled />
-          ))}
-        </div>
+        <PlayerHand disabled />
       </div>
 
       {/* Condition slots */}
@@ -171,66 +160,98 @@ export function TeammateSelectScreen() {
             (s, i) => i !== index && s.mode === 'first_trick_win',
           );
           return (
-            <div key={index} className="bg-white rounded-xl p-4 space-y-3 border border-gray-100 shadow-sm">
+            <div key={index} className="bg-white rounded-2xl border border-amber-100 shadow-sm p-4 space-y-3">
               <div className="flex items-center gap-3">
                 <span className="text-gray-500 font-semibold">Slot {index + 1}</span>
-                <select
-                  value={slot.mode}
-                  onChange={(e) =>
+              </div>
+
+              {/* Mode toggle — large tap-friendly buttons */}
+              <div className="flex rounded-xl overflow-hidden border-2 border-amber-200">
+                <button
+                  onClick={() =>
                     updateSlot(index, {
-                      mode: e.target.value as 'card_reveal' | 'first_trick_win',
+                      mode: 'card_reveal',
                       suit: undefined,
                       rank: undefined,
                       instance: undefined,
                     })
                   }
-                  className="bg-gray-50 border border-gray-200 rounded px-2 py-1 text-gray-800 text-sm"
+                  className={`flex-1 py-3 text-sm font-semibold transition-colors ${
+                    slot.mode === 'card_reveal'
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-white text-gray-600'
+                  }`}
                 >
-                  <option value="card_reveal">Card Reveal</option>
-                  <option value="first_trick_win" disabled={ftwUsedElsewhere}>First Trick Win</option>
-                </select>
+                  Card Reveal
+                </button>
+                <button
+                  onClick={() =>
+                    updateSlot(index, {
+                      mode: 'first_trick_win',
+                      suit: undefined,
+                      rank: undefined,
+                      instance: undefined,
+                    })
+                  }
+                  disabled={ftwUsedElsewhere}
+                  className={`flex-1 py-3 text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    slot.mode === 'first_trick_win'
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-white text-gray-600'
+                  }`}
+                >
+                  First Trick Win
+                </button>
               </div>
 
               {slot.mode === 'card_reveal' && (
-                <div className="flex gap-3 flex-wrap items-center">
+                <div className="space-y-3 w-full overflow-hidden">
                   {/* Suit */}
-                  <select
-                    value={slot.suit ?? ''}
-                    onChange={(e) =>
-                      updateSlot(index, {
-                        suit: e.target.value as Suit,
-                        rank: undefined,
-                        instance: undefined,
-                      })
-                    }
-                    className="bg-gray-50 border border-gray-200 rounded px-2 py-1 text-gray-800 text-sm"
-                  >
-                    <option value="">Suit...</option>
-                    {ALL_SUITS.map((s) => (
-                      <option key={s} value={s}>
-                        {SUIT_LABELS[s]} {s}
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* Rank */}
-                  {slot.suit && (
+                  <div className="w-full">
+                    <label className="text-xs text-gray-500 mb-1 block">Suit</label>
                     <select
-                      value={slot.rank?.toString() ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        const rank = isNaN(Number(v)) ? v : Number(v);
-                        updateSlot(index, { rank: rank as Rank, instance: undefined });
-                      }}
-                      className="bg-gray-50 border border-gray-200 rounded px-2 py-1 text-gray-800 text-sm"
+                      value={slot.suit ?? ''}
+                      onChange={(e) =>
+                        updateSlot(index, {
+                          suit: e.target.value as Suit,
+                          rank: undefined,
+                          instance: undefined,
+                        })
+                      }
+                      className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-base bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                      size={1}
                     >
-                      <option value="">Rank...</option>
-                      {ranksForSuit(slot.suit).map((r) => (
-                        <option key={String(r)} value={String(r)}>
-                          {r}
+                      <option value="" disabled>Select suit...</option>
+                      {ALL_SUITS.map((s) => (
+                        <option key={s} value={s}>
+                          {SUIT_LABELS[s]} {s}
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  {/* Rank */}
+                  {slot.suit && (
+                    <div className="w-full">
+                      <label className="text-xs text-gray-500 mb-1 block">Rank</label>
+                      <select
+                        value={slot.rank?.toString() ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          const rank = isNaN(Number(v)) ? v : Number(v);
+                          updateSlot(index, { rank: rank as Rank, instance: undefined });
+                        }}
+                        className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-base bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                        size={1}
+                      >
+                        <option value="" disabled>Select rank...</option>
+                        {ranksForSuit(slot.suit).map((r) => (
+                          <option key={String(r)} value={String(r)}>
+                            {r}{r === 'A' ? ' (Ace)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   )}
 
                   {/* Instance (2-deck only) */}
@@ -238,17 +259,21 @@ export function TeammateSelectScreen() {
                     const instances = instancesForCard(slot.suit, slot.rank);
                     if (instances.length < 2) return null;
                     return (
-                      <select
-                        value={slot.instance?.toString() ?? ''}
-                        onChange={(e) =>
-                          updateSlot(index, { instance: parseInt(e.target.value) as 1 | 2 })
-                        }
-                        className="bg-gray-50 border border-gray-200 rounded px-2 py-1 text-gray-800 text-sm"
-                      >
-                        <option value="">Instance...</option>
-                        <option value="1">1st play</option>
-                        <option value="2">2nd play</option>
-                      </select>
+                      <div className="w-full">
+                        <label className="text-xs text-gray-500 mb-1 block">Instance</label>
+                        <select
+                          value={slot.instance?.toString() ?? ''}
+                          onChange={(e) =>
+                            updateSlot(index, { instance: parseInt(e.target.value) as 1 | 2 })
+                          }
+                          className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-base bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                          size={1}
+                        >
+                          <option value="" disabled>Select instance...</option>
+                          <option value="1">1st play</option>
+                          <option value="2">2nd play</option>
+                        </select>
+                      </div>
                     );
                   })()}
                 </div>
@@ -266,13 +291,15 @@ export function TeammateSelectScreen() {
         })}
       </div>
 
-      <button
-        onClick={handleSubmit}
-        disabled={!allValid}
-        className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg transition-colors cursor-pointer"
-      >
-        Confirm Teammates
-      </button>
+      <div className="sticky bottom-14 md:static px-0 py-3">
+        <button
+          onClick={handleSubmit}
+          disabled={!allValid}
+          className="w-full md:w-auto py-4 md:py-2 px-6 text-base font-bold text-white rounded-xl transition-colors bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+        >
+          Confirm Teammates
+        </button>
+      </div>
     </div>
   );
 }

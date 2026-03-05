@@ -2,7 +2,6 @@ import { useGameStore } from '../../store/gameStore';
 import { TrickArea } from './TrickArea';
 import { PlayerHand } from './PlayerHand';
 import { TeammateRevealToast } from './TeammateRevealToast';
-import { ScoreBar } from './ScoreBar';
 
 const suitSymbols: Record<string, string> = {
   spades: '♠',
@@ -23,52 +22,66 @@ export function GameTableScreen() {
   const tricks = useGameStore((s) => s.tricks);
   const currentTrick = useGameStore((s) => s.currentTrick);
   const highestBid = useGameStore((s) => s.highestBid);
-  const bidderId = useGameStore((s) => s.bidderId);
-  const players = useGameStore((s) => s.players);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
+  const bidderTeamScore = useGameStore((s) => s.bidderTeamScore);
+  const oppositionTeamScore = useGameStore((s) => s.oppositionTeamScore);
+  const isMyTurn = useGameStore((s) => s.isMyTurn)();
 
   const current = currentPlayer();
-  const bidderName = players.find((p) => p.id === bidderId)?.name ?? 'Bidder';
   const trickNum = tricks.length + (currentTrick ? 1 : 0);
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full pb-14 md:pb-0">
       <TeammateRevealToast />
 
-      {/* Top Bar */}
-      <div className="flex items-center justify-between bg-white rounded-xl px-4 py-2 mb-4 shadow-sm border border-gray-100">
-        <div className="text-sm">
-          {trumpSuit && (
-            <span className={`font-bold ${suitColors[trumpSuit] ?? 'text-gray-800'}`}>
-              Trump: {suitSymbols[trumpSuit]}
-            </span>
-          )}
-        </div>
-        <div className="text-sm text-center">
-          <span className="text-gray-600">Trick {trickNum}</span>
-          {current && (
-            <span className="text-gray-400 ml-2">
-              · {current.name}'s turn
-            </span>
-          )}
-        </div>
-        <div className="text-sm text-right">
-          <span className="text-gray-600">Bid: {highestBid?.amount}</span>
-          <span className="text-gray-400 ml-2">
-            · {bidderName}
+      {/* Top Bar — compact on mobile */}
+      <div className="flex items-center justify-between px-3 py-2 bg-white border-b border-gray-200 shadow-sm text-sm md:text-base shrink-0">
+        {trumpSuit ? (
+          <span className={`font-bold text-lg ${suitColors[trumpSuit] ?? 'text-gray-800'}`}>
+            {suitSymbols[trumpSuit]} Trump
           </span>
-        </div>
+        ) : (
+          <span className="text-gray-400 text-sm">No trump yet</span>
+        )}
+        <span className="text-gray-600 text-xs md:text-sm font-medium">
+          Trick {trickNum}
+        </span>
+        <span className="text-xs text-gray-500">
+          Bid: <b>{highestBid?.amount ?? '—'}</b>
+        </span>
       </div>
 
-      {/* Score Bar */}
-      <ScoreBar />
+      {/* Whose turn — mobile only banner */}
+      <div className="md:hidden px-3 py-2 text-center shrink-0 bg-amber-50 border-b border-amber-100">
+        {isMyTurn ? (
+          <span className="text-green-600 font-bold text-sm">
+            ✓ Your turn — tap a card to play
+          </span>
+        ) : (
+          <span className="text-gray-500 text-sm">
+            Waiting for {current?.name}...
+          </span>
+        )}
+      </div>
 
       {/* Center: Trick Area */}
-      <div className="flex-1 flex items-center justify-center bg-amber-50/60 rounded-xl">
+      <div className="flex-1 flex items-center justify-center p-2 md:p-6 bg-amber-50 min-h-0">
         <TrickArea />
       </div>
 
+      {/* Score bar — compact on mobile */}
+      <div className="shrink-0 px-3 py-2 bg-white border-t border-gray-200 flex justify-between text-xs md:text-sm">
+        <span className="text-gray-600">
+          Bidder: <b className="text-amber-600">{bidderTeamScore}</b>
+          /{highestBid?.amount}
+        </span>
+        <span className="text-gray-600">
+          Opposition: <b>{oppositionTeamScore}</b>
+        </span>
+      </div>
+
       {/* Bottom: My Hand */}
-      <div className="mt-4">
+      <div className="shrink-0 bg-white border-t border-gray-100 p-2">
         <PlayerHand />
       </div>
     </div>
