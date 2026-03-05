@@ -2,11 +2,11 @@ import { useGameStore } from '../../store/gameStore';
 import { CardComponent } from '../shared/CardComponent';
 import type { Suit } from '@blind-alliance/core';
 
-const suits: { suit: Suit; symbol: string; color: string }[] = [
-  { suit: 'spades', symbol: '♠', color: 'text-white' },
-  { suit: 'hearts', symbol: '♥', color: 'text-red-400' },
-  { suit: 'diamonds', symbol: '♦', color: 'text-red-400' },
-  { suit: 'clubs', symbol: '♣', color: 'text-white' },
+const suits: { suit: Suit; symbol: string; color: string; bg: string; hover: string }[] = [
+  { suit: 'spades', symbol: '♠', color: 'text-gray-800', bg: 'bg-gray-100', hover: 'hover:bg-gray-200' },
+  { suit: 'hearts', symbol: '♥', color: 'text-red-500', bg: 'bg-red-50', hover: 'hover:bg-red-100' },
+  { suit: 'diamonds', symbol: '♦', color: 'text-orange-500', bg: 'bg-orange-50', hover: 'hover:bg-orange-100' },
+  { suit: 'clubs', symbol: '♣', color: 'text-emerald-600', bg: 'bg-emerald-50', hover: 'hover:bg-emerald-100' },
 ];
 
 export function TrumpSelectScreen() {
@@ -25,32 +25,32 @@ export function TrumpSelectScreen() {
       {isBidder ? (
         <>
           <div className="text-center">
-            <h2 className="text-2xl font-bold mb-2">
+            <h2 className="text-2xl font-bold mb-2 text-gray-800">
               You won the bid with {highestBid?.amount} points!
             </h2>
-            <p className="text-gray-400">Choose your trump suit</p>
+            <p className="text-gray-500">Choose your trump suit</p>
           </div>
 
           {/* Suit buttons */}
           <div className="flex justify-center gap-4">
-            {suits.map(({ suit, symbol, color }) => (
+            {suits.map(({ suit, symbol, color, bg, hover }) => (
               <button
                 key={suit}
                 onClick={() => selectTrump(suit)}
-                className={`w-24 h-28 bg-gray-800 hover:bg-gray-700 border-2 border-gray-600 hover:border-blue-500 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer`}
+                className={`w-28 h-32 ${bg} ${hover} border-2 border-gray-200 hover:ring-4 hover:ring-amber-400 rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer shadow-sm`}
               >
-                <span className={`text-4xl ${color}`}>{symbol}</span>
-                <span className="text-sm text-gray-300 mt-1 capitalize">{suit}</span>
+                <span className={`text-5xl ${color}`}>{symbol}</span>
+                <span className="text-sm text-gray-500 mt-1 capitalize">{suit}</span>
               </button>
             ))}
           </div>
         </>
       ) : (
         <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">
+          <h2 className="text-2xl font-bold mb-2 text-gray-800">
             {bidderName} won the bid with {highestBid?.amount} points
           </h2>
-          <p className="text-gray-400">Waiting for {bidderName} to choose trump suit...</p>
+          <p className="text-gray-500">Waiting for {bidderName} to choose trump suit...</p>
         </div>
       )}
 

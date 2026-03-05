@@ -27,7 +27,7 @@ export function PlayerHand() {
           </span>
         )}
         {myTurn && (
-          <span className="text-sm text-green-400 font-semibold">Your turn!</span>
+          <span className="text-sm text-green-600 font-semibold">Your turn!</span>
         )}
       </div>
       <div className="flex flex-wrap gap-2">

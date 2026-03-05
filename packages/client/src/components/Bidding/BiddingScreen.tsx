@@ -38,17 +38,17 @@ export function BiddingScreen() {
       </div>
 
       {/* Right: Bidding Panel */}
-      <div className="w-80 bg-gray-800 rounded-xl p-6 space-y-4">
-        <h2 className="text-lg font-bold">Bidding</h2>
+      <div className="w-80 bg-white rounded-2xl p-6 space-y-4 shadow border border-gray-100">
+        <h2 className="text-lg font-bold text-gray-800">Bidding</h2>
 
-        <div className="text-sm text-gray-300">
+        <div className="text-sm text-gray-600">
           <p>
             Current highest bid:{' '}
-            <span className="text-yellow-400 font-bold">
+            <span className="text-amber-600 font-bold">
               {highestBid?.amount ?? 'None'}
             </span>
           </p>
-          <p className="text-gray-500">Minimum bid: {minBid}</p>
+          <p className="text-gray-400">Minimum bid: {minBid}</p>
         </div>
 
         {/* Bid history */}
@@ -61,7 +61,7 @@ export function BiddingScreen() {
               <div
                 key={i}
                 className={`text-sm px-2 py-1 rounded ${
-                  isHighest ? 'bg-yellow-600/20 text-yellow-400' : 'text-gray-300'
+                  isHighest ? 'bg-amber-50 text-amber-600 font-semibold' : 'text-gray-600'
                 }`}
               >
                 {name}: {bid.amount === 0 ? 'PASS' : bid.amount}
@@ -72,8 +72,8 @@ export function BiddingScreen() {
 
         {/* My turn controls */}
         {myTurn ? (
-          <div className="space-y-3 border-t border-gray-700 pt-3">
-            <p className="text-green-400 font-semibold text-sm">Your turn to bid!</p>
+          <div className="space-y-3 border-t border-gray-200 pt-3">
+            <p className="text-green-600 font-semibold text-sm">Your turn to bid!</p>
             <div className="flex gap-2 items-center">
               <input
                 type="number"
@@ -81,7 +81,7 @@ export function BiddingScreen() {
                 onChange={(e) => setBidAmount(Math.max(minimumBid, parseInt(e.target.value) || minimumBid))}
                 min={minimumBid}
                 step={5}
-                className="w-24 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-24 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
               />
               <button
                 onClick={() => {
@@ -89,22 +89,22 @@ export function BiddingScreen() {
                   placeBid(bidAmount);
                 }}
                 disabled={bidAmount % 5 !== 0 || bidAmount < minimumBid}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold px-4 py-2 rounded-lg transition-colors cursor-pointer"
+                className="bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold px-4 py-2 rounded-lg transition-colors cursor-pointer"
               >
                 Place Bid
               </button>
             </div>
             <button
               onClick={() => passBid()}
-              className="w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 rounded-lg transition-colors cursor-pointer"
+              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 rounded-lg transition-colors cursor-pointer"
             >
               Pass
             </button>
           </div>
         ) : (
-          <div className="border-t border-gray-700 pt-3">
-            <p className="text-gray-400 text-sm">
-              Waiting for <span className="text-white font-semibold">{current?.name ?? '...'}</span> to bid...
+          <div className="border-t border-gray-200 pt-3">
+            <p className="text-gray-500 text-sm">
+              Waiting for <span className="text-gray-800 font-semibold">{current?.name ?? '...'}</span> to bid...
             </p>
           </div>
         )}

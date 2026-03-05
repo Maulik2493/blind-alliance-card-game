@@ -19,18 +19,18 @@ export function ScoreBar() {
   const onTrack = progress >= expectedProgress * 0.8;
 
   return (
-    <div className="bg-gray-800 rounded-lg px-4 py-2 mb-4 space-y-1">
+    <div className="bg-white rounded-xl px-4 py-2 mb-4 space-y-1 shadow-sm border border-gray-100">
       <div className="flex justify-between text-sm">
-        <span className="text-blue-400">
+        <span className="text-blue-600">
           Bidder Team: <span className="font-bold">{bidderTeamScore}</span>
-          {bid > 0 && <span className="text-gray-500"> / {bid}</span>}
+          {bid > 0 && <span className="text-gray-400"> / {bid}</span>}
         </span>
-        <span className="text-red-400">
+        <span className="text-red-500">
           Opposition: <span className="font-bold">{oppositionTeamScore}</span>
         </span>
       </div>
       {bid > 0 && (
-        <div className="w-full bg-gray-700 rounded-full h-2">
+        <div className="w-full bg-gray-200 rounded-full h-2">
           <div
             className={`h-2 rounded-full transition-all duration-300 ${
               onTrack ? 'bg-green-500' : 'bg-red-500'

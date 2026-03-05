@@ -13,7 +13,7 @@ export default function App() {
   const phase = useGameStore((s) => s.phase);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen bg-amber-50 text-gray-800">
       <ErrorToast />
       <div className="flex h-screen">
         {/* Main game area */}
@@ -29,7 +29,7 @@ export default function App() {
         </div>
 
         {/* Debug sidebar — always visible */}
-        <div className="w-80 border-l border-gray-700 flex flex-col">
+        <div className="w-80 border-l border-amber-200 flex flex-col bg-white shadow-inner">
           <DebugPanel />
           <GameLog />
         </div>

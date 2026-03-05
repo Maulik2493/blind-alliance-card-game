@@ -1,10 +1,17 @@
-import type { Card } from '@blind-alliance/core';
+import type { Card, Suit } from '@blind-alliance/core';
 
 const suitSymbols: Record<string, string> = {
   spades: '♠',
   hearts: '♥',
   diamonds: '♦',
   clubs: '♣',
+};
+
+const suitColors: Record<Suit, string> = {
+  spades: 'text-gray-900',
+  hearts: 'text-red-500',
+  diamonds: 'text-orange-500',
+  clubs: 'text-emerald-700',
 };
 
 interface CardComponentProps {
@@ -18,32 +25,40 @@ interface CardComponentProps {
 export function CardComponent({ card, onClick, disabled, highlighted, faceDown }: CardComponentProps) {
   if (faceDown) {
     return (
-      <div className="rounded-lg border-2 border-gray-500 w-16 h-24 flex flex-col items-center justify-center bg-blue-900 text-gray-400 text-sm font-bold select-none">
-        <span className="text-2xl">🂠</span>
+      <div className="rounded-xl border border-gray-200 shadow-md bg-white w-16 h-24 select-none overflow-hidden">
+        <div className="w-full h-full rounded-lg bg-blue-700 bg-[repeating-linear-gradient(45deg,#1d4ed8,#1d4ed8_2px,#1e40af_2px,#1e40af_8px)]" />
       </div>
     );
   }
 
-  const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
-  const textColor = isRed ? 'text-red-400' : 'text-white';
+  const suitColor = suitColors[card.suit];
   const symbol = suitSymbols[card.suit] ?? '';
 
-  const borderClass = highlighted
-    ? 'border-green-400 ring-2 ring-green-400'
-    : 'border-gray-500';
+  const highlightClass = highlighted
+    ? 'ring-2 ring-blue-400 ring-offset-1 -translate-y-2 shadow-blue-200'
+    : '';
 
-  const opacityClass = disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:scale-105';
+  const disabledClass = disabled
+    ? 'opacity-40 cursor-not-allowed hover:shadow-md hover:translate-y-0'
+    : 'cursor-pointer hover:shadow-lg hover:-translate-y-1';
 
   return (
     <div
-      className={`rounded-lg border-2 w-16 h-24 flex flex-col items-center justify-center text-sm font-bold select-none transition-all bg-gray-800 ${textColor} ${borderClass} ${opacityClass}`}
+      className={`rounded-xl border border-gray-200 shadow-md bg-white w-16 h-24 flex flex-col justify-between p-1.5 select-none transition-all duration-150 ${suitColor} ${highlightClass} ${disabledClass}`}
       onClick={!disabled ? onClick : undefined}
     >
-      <span className="text-lg">{card.rank}</span>
-      <span className="text-xl">{symbol}</span>
-      {card.points > 0 && (
-        <span className="text-[10px] text-yellow-400 mt-0.5">{card.points}pts</span>
-      )}
+      <div className="flex flex-col h-full">
+        <span className="text-sm font-bold leading-none">{card.rank}</span>
+        <span className="text-xs leading-none">{symbol}</span>
+        <div className="flex-1 flex items-center justify-center">
+          <span className="text-2xl">{symbol}</span>
+        </div>
+        {card.points > 0 && (
+          <span className="text-xs font-semibold text-amber-600 text-right">
+            {card.points}pts
+          </span>
+        )}
+      </div>
     </div>
   );
 }

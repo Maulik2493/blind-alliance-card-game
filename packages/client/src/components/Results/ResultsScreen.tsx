@@ -21,15 +21,15 @@ export function ResultsScreen() {
 
   return (
     <div className="min-h-full flex items-center justify-center">
-      <div className="bg-gray-800 rounded-xl p-8 max-w-2xl w-full shadow-2xl space-y-6">
+      <div className="bg-white rounded-xl p-8 max-w-2xl w-full shadow-lg border border-gray-100 space-y-6">
         {/* Header */}
         <div className="text-center">
           {winner === 'bidder_team' ? (
-            <h1 className="text-4xl font-bold text-green-400">
+            <h1 className="text-4xl font-bold text-green-600">
               🏆 Bidder's Team Wins!
             </h1>
           ) : (
-            <h1 className="text-4xl font-bold text-red-400">
+            <h1 className="text-4xl font-bold text-red-500">
               Bidder's Team Failed
             </h1>
           )}
@@ -38,12 +38,12 @@ export function ResultsScreen() {
         {/* Score Summary */}
         <div className="grid grid-cols-2 gap-6">
           {/* Bidder's Team */}
-          <div className="bg-gray-700/50 rounded-lg p-4">
-            <h3 className="text-blue-400 font-bold mb-3 text-center">Bidder's Team</h3>
+          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+            <h3 className="text-blue-600 font-bold mb-3 text-center">Bidder's Team</h3>
             <div className="space-y-1">
               {bidderTeam.map((p) => (
                 <div key={p.id} className="flex justify-between text-sm">
-                  <span className={p.id === myPlayerId ? 'text-yellow-400' : 'text-gray-300'}>
+                  <span className={p.id === myPlayerId ? 'text-amber-600 font-semibold' : 'text-gray-700'}>
                     {p.name}
                     {p.id === bidderId && ' ★'}
                     {p.id === myPlayerId && ' (you)'}
@@ -51,18 +51,18 @@ export function ResultsScreen() {
                 </div>
               ))}
             </div>
-            <div className="border-t border-gray-600 mt-3 pt-2 space-y-1 text-sm">
+            <div className="border-t border-gray-200 mt-3 pt-2 space-y-1 text-sm">
               <div className="flex justify-between font-bold">
                 <span>Total:</span>
-                <span className="text-blue-400">{bidderTeamScore}</span>
+                <span className="text-blue-600">{bidderTeamScore}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">Bid:</span>
+                <span className="text-gray-500">Bid:</span>
                 <span>{bidAmount}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">Result:</span>
-                <span className={bidMet ? 'text-green-400' : 'text-red-400'}>
+                <span className="text-gray-500">Result:</span>
+                <span className={bidMet ? 'text-green-600' : 'text-red-500'}>
                   {bidMet ? 'Met ✓' : 'Failed ✕'}
                 </span>
               </div>
@@ -70,22 +70,22 @@ export function ResultsScreen() {
           </div>
 
           {/* Opposition Team */}
-          <div className="bg-gray-700/50 rounded-lg p-4">
-            <h3 className="text-red-400 font-bold mb-3 text-center">Opposition Team</h3>
+          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+            <h3 className="text-red-500 font-bold mb-3 text-center">Opposition Team</h3>
             <div className="space-y-1">
               {oppositionTeam.map((p) => (
                 <div key={p.id} className="flex justify-between text-sm">
-                  <span className={p.id === myPlayerId ? 'text-yellow-400' : 'text-gray-300'}>
+                  <span className={p.id === myPlayerId ? 'text-amber-600 font-semibold' : 'text-gray-700'}>
                     {p.name}
                     {p.id === myPlayerId && ' (you)'}
                   </span>
                 </div>
               ))}
             </div>
-            <div className="border-t border-gray-600 mt-3 pt-2 text-sm">
+            <div className="border-t border-gray-200 mt-3 pt-2 text-sm">
               <div className="flex justify-between font-bold">
                 <span>Total:</span>
-                <span className="text-red-400">{oppositionTeamScore}</span>
+                <span className="text-red-500">{oppositionTeamScore}</span>
               </div>
             </div>
           </div>
@@ -93,7 +93,7 @@ export function ResultsScreen() {
 
         {/* My Result */}
         <div className="text-center">
-          <p className={`text-lg font-semibold ${isWinner ? 'text-green-400' : 'text-red-400'}`}>
+          <p className={`text-lg font-semibold ${isWinner ? 'text-green-600' : 'text-red-500'}`}>
             You were on the {isWinner ? 'winning' : 'losing'} team
             ({myPlayer?.team === 'bidder' ? 'Bidder' : 'Opposition'})
           </p>
@@ -103,7 +103,7 @@ export function ResultsScreen() {
         <div className="text-center">
           <button
             onClick={() => window.location.reload()}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3 rounded-lg transition-colors cursor-pointer text-lg"
+            className="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-8 py-3 rounded-lg transition-colors cursor-pointer text-lg"
           >
             Play Again
           </button>

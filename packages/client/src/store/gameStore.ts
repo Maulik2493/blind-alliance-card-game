@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Card, Suit, GamePhase, Bid, Trick, TrickPlay, TeammateCondition } from '@blind-alliance/core';
 import type { AvailableConditionCard } from '@blind-alliance/core';
-import { getValidCards, getAvailableConditionCards, buildDeck } from '@blind-alliance/core';
+import { getValidCards, getAvailableConditionCards, buildDeck, sortHand } from '@blind-alliance/core';
 import { socket, connectSocket } from '../socket';
 
 // ─── Types (mirrored from server/src/events.ts) ─────────────────────────────
@@ -165,13 +165,13 @@ export const useGameStore = create<GameStore>((set, get) => {
   });
 
   socket.on('game_started', ({ hand, phase }) => {
-    set({ myHand: hand, phase });
+    set({ myHand: sortHand(hand), phase });
     addLog('Game started — cards dealt');
   });
 
   socket.on('state_update', ({ state }) => {
     const prevPhase = get().phase;
-    set({ ...state });
+    set({ ...state, myHand: sortHand(state.myHand) });
     // Temporary debug: log phase transitions involving 'playing'
     if (prevPhase !== state.phase || state.phase === 'playing') {
       const currentP = state.players[state.currentPlayerIndex];

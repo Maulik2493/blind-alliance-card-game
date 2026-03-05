@@ -11,6 +11,13 @@ const suitSymbols: Record<string, string> = {
   clubs: '♣',
 };
 
+const suitColors: Record<string, string> = {
+  spades: 'text-gray-800',
+  hearts: 'text-red-500',
+  diamonds: 'text-orange-500',
+  clubs: 'text-emerald-600',
+};
+
 export function GameTableScreen() {
   const trumpSuit = useGameStore((s) => s.trumpSuit);
   const tricks = useGameStore((s) => s.tricks);
@@ -28,16 +35,16 @@ export function GameTableScreen() {
       <TeammateRevealToast />
 
       {/* Top Bar */}
-      <div className="flex items-center justify-between bg-gray-800 rounded-lg px-4 py-2 mb-4">
+      <div className="flex items-center justify-between bg-white rounded-xl px-4 py-2 mb-4 shadow-sm border border-gray-100">
         <div className="text-sm">
           {trumpSuit && (
-            <span className="text-yellow-400 font-bold">
+            <span className={`font-bold ${suitColors[trumpSuit] ?? 'text-gray-800'}`}>
               Trump: {suitSymbols[trumpSuit]}
             </span>
           )}
         </div>
         <div className="text-sm text-center">
-          <span className="text-gray-300">Trick {trickNum}</span>
+          <span className="text-gray-600">Trick {trickNum}</span>
           {current && (
             <span className="text-gray-400 ml-2">
               · {current.name}'s turn
@@ -45,8 +52,8 @@ export function GameTableScreen() {
           )}
         </div>
         <div className="text-sm text-right">
-          <span className="text-gray-300">Bid: {highestBid?.amount}</span>
-          <span className="text-gray-500 ml-2">
+          <span className="text-gray-600">Bid: {highestBid?.amount}</span>
+          <span className="text-gray-400 ml-2">
             · {bidderName}
           </span>
         </div>
@@ -56,7 +63,7 @@ export function GameTableScreen() {
       <ScoreBar />
 
       {/* Center: Trick Area */}
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center bg-amber-50/60 rounded-xl">
         <TrickArea />
       </div>
 

@@ -147,8 +147,8 @@ export function TeammateSelectScreen() {
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-2xl font-bold mb-1">Select Teammate Conditions</h2>
-        <p className="text-gray-400">
-          Trump: <span className="text-yellow-400">{trumpSuit && SUIT_LABELS[trumpSuit]}</span>
+        <p className="text-gray-500">
+          Trump: <span className="text-amber-600">{trumpSuit && SUIT_LABELS[trumpSuit]}</span>
           {' · '}Choose {maxTeammateCount} condition{maxTeammateCount > 1 ? 's' : ''}
         </p>
       </div>
@@ -171,9 +171,9 @@ export function TeammateSelectScreen() {
             (s, i) => i !== index && s.mode === 'first_trick_win',
           );
           return (
-            <div key={index} className="bg-gray-800 rounded-xl p-4 space-y-3">
+            <div key={index} className="bg-white rounded-xl p-4 space-y-3 border border-gray-100 shadow-sm">
               <div className="flex items-center gap-3">
-                <span className="text-gray-400 font-semibold">Slot {index + 1}</span>
+                <span className="text-gray-500 font-semibold">Slot {index + 1}</span>
                 <select
                   value={slot.mode}
                   onChange={(e) =>
@@ -184,7 +184,7 @@ export function TeammateSelectScreen() {
                       instance: undefined,
                     })
                   }
-                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                  className="bg-gray-50 border border-gray-200 rounded px-2 py-1 text-gray-800 text-sm"
                 >
                   <option value="card_reveal">Card Reveal</option>
                   <option value="first_trick_win" disabled={ftwUsedElsewhere}>First Trick Win</option>
@@ -203,7 +203,7 @@ export function TeammateSelectScreen() {
                         instance: undefined,
                       })
                     }
-                    className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                    className="bg-gray-50 border border-gray-200 rounded px-2 py-1 text-gray-800 text-sm"
                   >
                     <option value="">Suit...</option>
                     {ALL_SUITS.map((s) => (
@@ -222,7 +222,7 @@ export function TeammateSelectScreen() {
                         const rank = isNaN(Number(v)) ? v : Number(v);
                         updateSlot(index, { rank: rank as Rank, instance: undefined });
                       }}
-                      className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                      className="bg-gray-50 border border-gray-200 rounded px-2 py-1 text-gray-800 text-sm"
                     >
                       <option value="">Rank...</option>
                       {ranksForSuit(slot.suit).map((r) => (
@@ -243,7 +243,7 @@ export function TeammateSelectScreen() {
                         onChange={(e) =>
                           updateSlot(index, { instance: parseInt(e.target.value) as 1 | 2 })
                         }
-                        className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                        className="bg-gray-50 border border-gray-200 rounded px-2 py-1 text-gray-800 text-sm"
                       >
                         <option value="">Instance...</option>
                         <option value="1">1st play</option>
@@ -255,11 +255,11 @@ export function TeammateSelectScreen() {
               )}
 
               {slot.mode === 'first_trick_win' && (
-                <p className="text-gray-400 text-sm">Whoever wins trick 1 becomes your teammate</p>
+                <p className="text-gray-500 text-sm">Whoever wins trick 1 becomes your teammate</p>
               )}
 
               {dupError && (
-                <p className="text-red-400 text-sm">{dupError}</p>
+                <p className="text-red-500 text-sm">{dupError}</p>
               )}
             </div>
           );
@@ -269,7 +269,7 @@ export function TeammateSelectScreen() {
       <button
         onClick={handleSubmit}
         disabled={!allValid}
-        className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg transition-colors cursor-pointer"
+        className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg transition-colors cursor-pointer"
       >
         Confirm Teammates
       </button>
