@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { PlayerHand } from '../GameTable/PlayerHand';
-import { nextValidBid } from '@blind-alliance/core';
+import { nextValidBid, getMaxBid } from '@blind-alliance/core';
 
 export function BiddingScreen() {
   const players = useGameStore((s) => s.players);
@@ -17,6 +17,7 @@ export function BiddingScreen() {
   const isMyBiddingTurn = biddingQueue[0] === myPlayerId;
   const currentBidderName = players.find((p) => p.id === biddingQueue[0])?.name ?? '...';
   const minimumBid = nextValidBid(highestBid?.amount ?? null, deckCount as 1 | 2);
+  const maxBid = getMaxBid(deckCount as 1 | 2);
   const [bidAmount, setBidAmount] = useState(minimumBid);
   const [showHand, setShowHand] = useState(false);
   const [currentBid, setCurrentBid] = useState(minimumBid);
@@ -145,8 +146,9 @@ export function BiddingScreen() {
               <input
                 type="number"
                 value={bidAmount}
-                onChange={(e) => setBidAmount(Math.max(minimumBid, parseInt(e.target.value) || minimumBid))}
+                onChange={(e) => setBidAmount(Math.min(maxBid, Math.max(minimumBid, parseInt(e.target.value) || minimumBid)))}
                 min={minimumBid}
+                max={maxBid}
                 step={5}
                 className="w-full text-center text-2xl font-bold border-2 border-amber-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
               />
@@ -156,7 +158,7 @@ export function BiddingScreen() {
                     if (bidAmount % 5 !== 0) return;
                     placeBid(bidAmount);
                   }}
-                  disabled={bidAmount % 5 !== 0 || bidAmount < minimumBid}
+                  disabled={bidAmount % 5 !== 0 || bidAmount < minimumBid || bidAmount > maxBid}
                   className="flex-1 py-2 text-base font-bold bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-xl transition-colors cursor-pointer"
                 >
                   Place Bid
@@ -181,15 +183,20 @@ export function BiddingScreen() {
               <div>
                 <p className="text-xs text-gray-500 mb-2 text-center">Add to bid:</p>
                 <div className="flex gap-2 justify-center flex-wrap">
-                  {[5, 10, 25, 50].map((increment) => (
-                    <button
-                      key={increment}
-                      onClick={() => setCurrentBid(currentBid + increment)}
-                      className="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-700 font-bold rounded-xl text-sm transition-colors active:scale-95"
+                  {[5, 10, 25, 50].map((increment) => {
+                    const newAmount = currentBid + increment;
+                    const disabled = newAmount > maxBid;
+                    return (
+                      <button
+                        key={increment}
+                        onClick={() => !disabled && setCurrentBid(newAmount)}
+                        disabled={disabled}
+                        className="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-700 font-bold rounded-xl text-sm transition-colors active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
                     >
                       +{increment}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 

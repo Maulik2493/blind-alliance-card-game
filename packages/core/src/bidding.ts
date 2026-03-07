@@ -12,6 +12,7 @@ export function isValidBid(amount: number, currentHighest: number | null, deckCo
   return (
     amount % 5 === 0 &&
     amount >= getMinBid(deckCount) &&
+    amount <= getMaxBid(deckCount) &&
     amount > (currentHighest ?? 0)
   );
 }
