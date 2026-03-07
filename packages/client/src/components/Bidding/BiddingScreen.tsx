@@ -45,7 +45,7 @@ export function BiddingScreen() {
         >
           {showHand ? 'Hide my hand ▲' : 'Show my hand ▼'}
         </button>
-        <div className={showHand ? 'block' : 'hidden md:block'}>
+        <div className={`w-full ${showHand ? 'block' : 'hidden md:block'}`}>
           <PlayerHand disabled />
         </div>
       </div>

@@ -26,8 +26,16 @@ interface CardComponentProps {
 export function CardComponent({ card, onClick, disabled, highlighted, faceDown, animateHighlight }: CardComponentProps) {
   if (faceDown) {
     return (
-      <div className="rounded-xl border border-gray-200 shadow-md bg-white w-20 h-28 select-none overflow-hidden">
-        <div className="w-full h-full rounded-lg bg-blue-700 bg-[repeating-linear-gradient(45deg,#1d4ed8,#1d4ed8_2px,#1e40af_2px,#1e40af_8px)]" />
+      <div
+        className="shadow-md bg-white select-none overflow-hidden"
+        style={{
+          width: 'var(--card-width, 5rem)',
+          height: 'calc(var(--card-width, 5rem) * 1.4)',
+          borderRadius: 'calc(var(--card-width, 5rem) * 0.12)',
+          flexShrink: 0,
+        }}
+      >
+        <div className="w-full h-full bg-blue-700 bg-[repeating-linear-gradient(45deg,#1d4ed8,#1d4ed8_2px,#1e40af_2px,#1e40af_8px)]" style={{ borderRadius: 'calc(var(--card-width, 5rem) * 0.10)' }} />
       </div>
     );
   }
@@ -47,17 +55,24 @@ export function CardComponent({ card, onClick, disabled, highlighted, faceDown, 
 
   return (
     <div
-      className={`rounded-xl border border-gray-200 shadow-md bg-white w-20 h-28 flex flex-col justify-between p-1.5 select-none transition-all duration-150 ${suitColor} ${highlightClass} ${disabledClass} ${bounceClass}`}
+      className={`border border-gray-200 shadow-md bg-white flex flex-col justify-between select-none transition-all duration-150 ${suitColor} ${highlightClass} ${disabledClass} ${bounceClass}`}
+      style={{
+        width: 'var(--card-width, 5rem)',
+        height: 'calc(var(--card-width, 5rem) * 1.4)',
+        borderRadius: 'calc(var(--card-width, 5rem) * 0.12)',
+        padding: 'calc(var(--card-width, 5rem) * 0.08)',
+        flexShrink: 0,
+      }}
       onClick={!disabled ? onClick : undefined}
     >
       <div className="flex flex-col h-full">
-        <span className="text-base font-bold leading-none">{card.rank}</span>
-        <span className="text-xs leading-none">{symbol}</span>
+        <span className="font-bold leading-none" style={{ fontSize: 'calc(var(--card-width, 5rem) * 0.22)' }}>{card.rank}</span>
+        <span className="leading-none" style={{ fontSize: 'calc(var(--card-width, 5rem) * 0.17)' }}>{symbol}</span>
         <div className="flex-1 flex items-center justify-center">
-          <span className="text-3xl">{symbol}</span>
+          <span style={{ fontSize: 'calc(var(--card-width, 5rem) * 0.45)', lineHeight: 1 }}>{symbol}</span>
         </div>
         {card.points > 0 && (
-          <span className="text-xs font-bold text-amber-600 text-right">
+          <span className="font-bold text-amber-600 text-right" style={{ fontSize: 'calc(var(--card-width, 5rem) * 0.17)' }}>
             {card.points}pts
           </span>
         )}

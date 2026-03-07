@@ -3261,3 +3261,403 @@ test('bid not higher than current highest throws'):
   // Actually p2 is now at front after p1 bid
   expect(() => placeBid(state, 'p2', 150)).toThrow()
 ```
+# PHASE 10 — Mobile Card Hand: Horizontal Scroll + Relative Styling
+
+## Apply Order
+10.1 → 10.2 → 10.3
+
+---
+
+## Fix 10.1 — Global scroll utility + relative base font
+```
+Update packages/client/src/index.css
+
+Add these global rules:
+
+  /* Fluid base font: scales between 14px (320px screen) and 16px (768px+)
+     All rem values throughout the app scale with this automatically */
+  html {
+    font-size: clamp(14px, 3.5vw, 16px);
+  }
+
+  /* Prevent horizontal page overflow at root */
+  body {
+    overflow-x: hidden;
+    width: 100%;
+  }
+
+  /* Reusable horizontal scroll container
+     Used for card hands on mobile */
+  .scroll-x {
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;  /* momentum scroll on iOS */
+    scrollbar-width: none;              /* hide scrollbar Firefox */
+  }
+  .scroll-x::-webkit-scrollbar {
+    display: none;                      /* hide scrollbar Chrome/Safari */
+  }
+```
+
+---
+
+## Fix 10.2 — CardComponent: relative sizing via CSS custom property
+```
+Update packages/client/src/components/shared/CardComponent.tsx
+
+Replace all fixed px/Tailwind size classes with values derived from
+a single CSS custom property --card-width so each context can
+override card size with one variable.
+
+── Card container ────────────────────────────────────────────────────────────
+
+  FROM:
+    <div className="w-20 h-28 rounded-xl ...">
+
+  TO:
+    <div
+      className="relative bg-white shadow-md flex flex-col
+                 justify-between select-none"
+      style={{
+        width: 'var(--card-width, 5rem)',
+        height: 'calc(var(--card-width, 5rem) * 1.4)',
+        borderRadius: 'calc(var(--card-width, 5rem) * 0.12)',
+        padding: 'calc(var(--card-width, 5rem) * 0.08)',
+        flexShrink: 0,
+      }}
+    >
+
+  This means:
+    Default width  = 5rem  (80px at 16px base font)
+    Height         = 1.4x width  (standard card ratio, never distorted)
+    Border radius  = 12% of width  (always proportional)
+    Padding        = 8% of width   (always proportional)
+    flexShrink: 0  prevents card squishing inside flex/scroll containers
+
+── Rank text (top-left corner) ──────────────────────────────────────────────
+
+  FROM: <span className="text-sm font-bold ...">
+  TO:   <span style={{ fontSize: 'calc(var(--card-width, 5rem) * 0.22)',
+                       fontWeight: 'bold',
+                       lineHeight: 1 }}>
+
+── Center suit symbol ────────────────────────────────────────────────────────
+
+  FROM: <span className="text-3xl ...">
+  TO:   <span style={{ fontSize: 'calc(var(--card-width, 5rem) * 0.45)',
+                       lineHeight: 1 }}>
+
+── Points badge (bottom-right) ───────────────────────────────────────────────
+
+  FROM: <span className="text-xs font-bold ...">
+  TO:   <span style={{ fontSize: 'calc(var(--card-width, 5rem) * 0.17)',
+                       fontWeight: 'bold' }}>
+
+── Ring/highlight classes — keep unchanged ───────────────────────────────────
+  ring-2, ring-blue-400, opacity-40, animate-bounce — all fine as-is
+  Only size-related values are changed above.
+
+── How to override card size per context ────────────────────────────────────
+
+  Hand on mobile:    style={{ '--card-width': '4.5rem' } as React.CSSProperties}
+  Hand on desktop:   style={{ '--card-width': '5rem'   } as React.CSSProperties}
+  Trick area:        style={{ '--card-width': '3.5rem' } as React.CSSProperties}
+  Bidding preview:   style={{ '--card-width': '4rem'   } as React.CSSProperties}
+```
+
+---
+
+## Fix 10.3 — PlayerHand: horizontal scroll on mobile, flex-wrap on desktop
+```
+Update packages/client/src/components/GameTable/PlayerHand.tsx
+
+Replace the absolute-positioned fan layout entirely with a
+horizontally scrollable flex row on mobile.
+
+Preserve the lift state logic from Fix 8.5 exactly — only the
+JSX layout changes, not the liftedCardKeys/showPulse hooks.
+
+── Remove these entirely ────────────────────────────────────────────────────
+
+  Remove:
+    - CARD_WIDTH_REM, CARD_HEIGHT_REM, LIFT_PERCENT constants
+    - containerRef, containerWidthRem state and useEffect
+    - leftPercent calculation
+    - position: absolute, top: 0, left: Xpx on card divs
+    - The relative container with paddingTop
+
+  Keep:
+    - validCardKeys Set computed outside the map
+    - liftedCardKeys state and both useEffects from Fix 8.5
+    - showPulse state and useEffect from Fix 8.5
+    - sortedHand from sortHand()
+    - All onClick/disabled/highlighted/animateHighlight logic
+
+── Mobile layout: horizontal scroll ─────────────────────────────────────────
+
+  <div className="md:hidden w-full pb-16">
+
+    {/* Outer scroll container — full width, scrolls horizontally */}
+    <div
+      className="scroll-x w-full flex flex-row items-end"
+      style={{
+        paddingTop: '1.5rem',    // space above cards for lift animation
+        paddingLeft: '1rem',
+        paddingRight: '1rem',
+        paddingBottom: '0.5rem',
+      }}
+    >
+      {sortedHand.map((card, index) => {
+        const cardKey = `${card.suit}-${card.rank}-${card.deckIndex}`
+        const isValid = validCardKeys.has(cardKey)
+        const isLifted = liftedCardKeys.has(cardKey)
+
+        return (
+          <div
+            key={cardKey}
+            className="flex-shrink-0 transition-transform duration-200"
+            style={{
+              // Override card size for mobile hand
+              '--card-width': '4.5rem',
+              // Negative margin creates overlap — 30% of card width
+              // Using calc() keeps it relative to card size
+              marginLeft: index === 0
+                ? 0
+                : 'calc(var(--card-width) * -0.30)',
+              // z-index: lifted (valid) cards appear above others
+              zIndex: isLifted ? index + 20 : index,
+              position: 'relative',   // required for z-index in flex row
+              // Lift valid cards upward using rem (scales with font size)
+              // Non-valid cards stay at baseline (translateY 0)
+              transform: isLifted
+                ? 'translateY(-1rem)'
+                : 'translateY(0)',
+            } as React.CSSProperties}
+          >
+            <CardComponent
+              card={card}
+              onClick={isMyTurn && isValid
+                ? () => store.playCard(card)
+                : undefined}
+              disabled={!isMyTurn || !isValid}
+              highlighted={isMyTurn && isValid}
+              animateHighlight={isMyTurn && isValid && showPulse}
+            />
+          </div>
+        )
+      })}
+
+      {/* Right padding spacer so last card scrolls fully into view */}
+      <div style={{ minWidth: '1rem', flexShrink: 0 }} aria-hidden />
+    </div>
+
+  </div>
+
+── Desktop layout: flex-wrap row ────────────────────────────────────────────
+
+  <div
+    className="hidden md:flex flex-wrap"
+    style={{ gap: '0.5rem' }}
+  >
+    {sortedHand.map(card => {
+      const cardKey = `${card.suit}-${card.rank}-${card.deckIndex}`
+      const isValid = validCardKeys.has(cardKey)
+      const isLifted = liftedCardKeys.has(cardKey)
+      return (
+        <div
+          key={cardKey}
+          className="transition-transform duration-200"
+          style={{
+            '--card-width': '5rem',
+            transform: isLifted ? 'translateY(-0.75rem)' : 'translateY(0)',
+          } as React.CSSProperties}
+        >
+          <CardComponent
+            card={card}
+            onClick={isMyTurn && isValid
+              ? () => store.playCard(card)
+              : undefined}
+            disabled={!isMyTurn || !isValid}
+            highlighted={isMyTurn && isValid}
+            animateHighlight={isMyTurn && isValid && showPulse}
+          />
+        </div>
+      )
+    })}
+  </div>
+
+── BiddingScreen hand preview ────────────────────────────────────────────────
+
+  No changes needed in BiddingScreen.tsx for the hand itself —
+  <PlayerHand disabled /> already renders the scroll layout above.
+
+  The disabled prop means isMyTurn is false inside PlayerHand,
+  so no cards are lifted and no onClick handlers are attached.
+  The scroll container still works exactly the same.
+
+  Only ensure the show/hide wrapper in BiddingScreen does NOT
+  constrain the width of PlayerHand:
+
+    FROM:
+      <div className={showHand ? 'block' : 'hidden md:block'}>
+        <PlayerHand disabled />
+      </div>
+
+    TO:
+      <div className={`w-full ${showHand ? 'block' : 'hidden md:block'}`}>
+        <PlayerHand disabled />
+      </div>
+
+  w-full ensures the scroll container inside PlayerHand
+  has the full screen width available to scroll within.
+
+── Why scroll instead of absolute fan ───────────────────────────────────────
+
+  Absolute fan issues:
+    - JS measurement of containerWidthRem unreliable before first paint
+    - Cards at screen edges clip regardless of offset math
+    - paddingTop in px caused overflow into score bar
+
+  Scroll row advantages:
+    - Native browser scroll — works on all screen sizes automatically
+    - No JS measurement needed — CSS handles everything
+    - Overlap via negative margin-left uses calc(var(--card-width) * X)
+      so it is always proportional to card size, never a fixed px value
+    - Lift via translateY in rem scales with html font-size
+    - Last card always reachable — right padding spacer ensures it
+
+── Verify after applying ─────────────────────────────────────────────────────
+
+  Test at these widths in DevTools (portrait, mobile preset):
+    320px — Galaxy A / small Android
+    375px — iPhone SE
+    390px — iPhone 14
+    414px — iPhone 14 Plus
+
+  For each width check:
+    [ ] Hand cards do NOT overflow the screen edge
+    [ ] Swiping left reveals remaining cards smoothly
+    [ ] Last card fully visible after scrolling to end
+    [ ] Valid cards lift upward cleanly on your turn
+    [ ] Lifted cards do NOT overlap score bar or trick area above
+    [ ] Tapping a valid card plays it correctly
+    [ ] Disabled hand in BiddingScreen scrolls but cards are not tappable
+    [ ] Desktop (768px+) shows flex-wrap row, no horizontal scroll
+```
+# PHASE 10 — Addendum: TrickArea Relative Sizing
+
+## Fix 10.4 — TrickArea: replace fixed px dimensions with vw-based values
+```
+Update packages/client/src/components/GameTable/TrickArea.tsx
+
+The arc/fan layout from Fix 8.1 is kept exactly as-is.
+Only the fixed px dimension constants (W, H, rx, ry) are replaced
+with values derived from viewport width so the arc scales correctly
+on any screen size without JS measurement.
+
+── Step 1: Replace static constants with reactive state ─────────────────────
+
+  Remove:
+    const isMobile = window.innerWidth < 768
+    const W = isMobile ? 300 : 400
+    const H = isMobile ? 220 : 280
+
+  Replace with:
+
+    const [dims, setDims] = useState(() => calcDims())
+
+    function calcDims() {
+      const vw = window.innerWidth
+      const W = Math.min(vw * 0.92, 420)  // 92% of screen, max 420px
+      const H = W * 0.68                  // height always 68% of width
+      return { W, H }
+    }
+
+    useEffect(() => {
+      const onResize = () => setDims(calcDims())
+      window.addEventListener('resize', onResize)
+      return () => window.removeEventListener('resize', onResize)
+    }, [])
+
+    const { W, H } = dims
+
+  This means:
+    - On a 390px phone:  W = 359px, H = 244px
+    - On a 375px phone:  W = 345px, H = 235px
+    - On a 768px tablet: W = 420px, H = 286px  (capped at 420)
+    - On a 1200px desktop: W = 420px, H = 286px (capped at 420)
+
+── Step 2: Derive all arc geometry from W and H (unchanged ratios) ──────────
+
+  Keep these exactly as Fix 8.1 defined them — ratios are already relative:
+    const cx = W / 2
+    const cy = H * 0.55
+    const rx = W * 0.38
+    const ry = H * 0.42
+
+  These are all percentages of W/H so they automatically
+  scale correctly once W and H are relative.
+
+── Step 3: Make card size relative per context ──────────────────────────────
+
+  Wrap each card div with the --card-width override from Fix 10.2:
+
+    <div
+      key={play.playOrder}
+      className="absolute transition-all duration-300"
+      style={{
+        '--card-width': `${W * 0.18}px`,
+        // Card width = 18% of container width
+        // On 390px phone:  W=359 → card = 64px  (~4rem)
+        // On desktop:      W=420 → card = 75px  (~4.7rem)
+        // Automatically proportional — no breakpoint needed
+        left: `${pos.x}px`,
+        top: `${pos.y}px`,
+        transform: `rotate(${pos.rotate * 0.15}deg)`,
+        zIndex: isWinner ? 10 : index,
+      } as React.CSSProperties}
+    >
+
+  Remove any hardcoded w-16, w-20 or similar size classes
+  from CardComponent inside TrickArea — the --card-width
+  custom property from Fix 10.2 handles sizing.
+
+── Step 4: Make container use relative width ────────────────────────────────
+
+  FROM:
+    <div
+      className="relative mx-auto"
+      style={{ width: `${W}px`, height: `${H}px` }}
+    >
+
+  TO:
+    <div
+      className="relative mx-auto w-full"
+      style={{
+        maxWidth: `${W}px`,
+        height: `${H}px`,
+        // w-full lets it shrink on very small screens
+        // maxWidth caps it at the calculated W
+      }}
+    >
+
+  Also update getCardPosition() to use the actual rendered width.
+  Since the container is now w-full with maxWidth, pass W directly —
+  it is already capped to 92vw so it will never exceed screen width.
+
+── Step 5: Verify arc layout at all sizes ───────────────────────────────────
+
+  Check in DevTools at:
+    320px — cards should still fit inside arc, no clipping
+    375px — arc centered, all cards visible
+    390px — standard test size
+    768px — desktop layout, larger arc, cards bigger
+
+  For each size check:
+    [ ] All played cards visible inside the arc
+    [ ] No card clipped by screen edge
+    [ ] Winner glow ring fully visible
+    [ ] Player name labels not truncated into each other
+    [ ] Center counter text readable
+    [ ] Arc resizes correctly after rotating device
+```

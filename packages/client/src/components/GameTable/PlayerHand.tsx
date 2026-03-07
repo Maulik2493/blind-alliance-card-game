@@ -25,20 +25,10 @@ export function PlayerHand({ disabled: forceDisabled }: { disabled?: boolean }) 
     }
   }, [myTurn]);
 
-  const isCardValid = (card: typeof myHand[0]) =>
-    valid.some(
-      (v) => v.suit === card.suit && v.rank === card.rank && v.deckIndex === card.deckIndex,
-    );
-
-  // Mobile fan offset calculation
-  const CARD_WIDTH = 80;
-  const MIN_VISIBLE = 28;
-  const MAX_OFFSET = 56;
-  const screenWidth = typeof window !== 'undefined' ? window.innerWidth - 32 : 360;
-  const naturalOffset = Math.floor(
-    (screenWidth - CARD_WIDTH) / Math.max(myHand.length - 1, 1),
+  // Pre-compute valid card keys for O(1) lookup
+  const validCardKeys = new Set(
+    valid.map((v) => `${v.suit}-${v.rank}-${v.deckIndex}`),
   );
-  const offset = Math.min(MAX_OFFSET, Math.max(MIN_VISIBLE, naturalOffset));
 
   return (
     <div className="pb-16 md:pb-0">
@@ -54,27 +44,34 @@ export function PlayerHand({ disabled: forceDisabled }: { disabled?: boolean }) 
         )}
       </div>
 
-      {/* Mobile layout */}
-      <div className="md:hidden w-full overflow-visible pb-2">
+      {/* Mobile layout: horizontal scroll */}
+      <div className="md:hidden w-full">
         <div
-          className="relative mx-auto pt-6"
+          className="scroll-x w-full flex flex-row items-end"
           style={{
-            width: `${CARD_WIDTH + offset * Math.max(myHand.length - 1, 0)}px`,
-            minWidth: '100%',
+            paddingTop: '1.5rem',
+            paddingLeft: '1rem',
+            paddingRight: '1rem',
+            paddingBottom: '0.5rem',
           }}
         >
           {myHand.map((card, index) => {
-            const isValid = isCardValid(card);
+            const cardKey = `${card.suit}-${card.rank}-${card.deckIndex}`;
+            const isValid = validCardKeys.has(cardKey);
+            const isLifted = myTurn && isValid;
+
             return (
               <div
-                key={`${card.suit}-${card.rank}-${card.deckIndex}`}
-                className={`transition-transform duration-150 ${
-                  isValid && myTurn ? '-translate-y-4' : 'translate-y-0'
-                } ${index === 0 ? '' : 'absolute'}`}
-                style={index === 0
-                  ? { position: 'relative', zIndex: 0 }
-                  : { left: `${index * offset}px`, top: 0, zIndex: index }
-                }
+                key={cardKey}
+                className="transition-transform duration-200"
+                style={{
+                  '--card-width': '4.5rem',
+                  marginLeft: index === 0 ? 0 : 'calc(var(--card-width) * -0.30)',
+                  zIndex: isLifted ? index + 20 : index,
+                  position: 'relative',
+                  flexShrink: 0,
+                  transform: isLifted ? 'translateY(-1rem)' : 'translateY(0)',
+                } as React.CSSProperties}
               >
                 <CardComponent
                   card={card}
@@ -86,21 +83,36 @@ export function PlayerHand({ disabled: forceDisabled }: { disabled?: boolean }) 
               </div>
             );
           })}
+          {/* Right padding spacer so last card scrolls fully into view */}
+          <div style={{ minWidth: '1rem', flexShrink: 0 }} aria-hidden />
         </div>
       </div>
 
-      {/* Desktop row layout */}
-      <div className="hidden md:flex flex-wrap gap-2">
-        {myHand.map((card, i) => (
-          <CardComponent
-            key={i}
-            card={card}
-            highlighted={myTurn && isCardValid(card)}
-            disabled={!myTurn || !isCardValid(card)}
-            onClick={myTurn && isCardValid(card) ? () => playCard(card) : undefined}
-            animateHighlight={myTurn && isCardValid(card) && showPulse}
-          />
-        ))}
+      {/* Desktop layout: flex-wrap row */}
+      <div className="hidden md:flex flex-wrap" style={{ gap: '0.5rem' }}>
+        {myHand.map((card) => {
+          const cardKey = `${card.suit}-${card.rank}-${card.deckIndex}`;
+          const isValid = validCardKeys.has(cardKey);
+          const isLifted = myTurn && isValid;
+          return (
+            <div
+              key={cardKey}
+              className="transition-transform duration-200"
+              style={{
+                '--card-width': '5rem',
+                transform: isLifted ? 'translateY(-0.75rem)' : 'translateY(0)',
+              } as React.CSSProperties}
+            >
+              <CardComponent
+                card={card}
+                onClick={myTurn && isValid ? () => playCard(card) : undefined}
+                disabled={!myTurn || !isValid}
+                highlighted={myTurn && isValid}
+                animateHighlight={myTurn && isValid && showPulse}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );

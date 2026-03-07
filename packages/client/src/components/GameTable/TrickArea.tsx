@@ -45,10 +45,23 @@ export function TrickArea() {
     };
   }, [currentTrick, currentTrick?.plays.length, tricks.length]);
 
-  // Arc layout calculations
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-  const W = isMobile ? 300 : 400;
-  const H = isMobile ? 220 : 280;
+  // Arc layout calculations — responsive to viewport
+  const [dims, setDims] = useState(() => calcDims());
+
+  function calcDims() {
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 400;
+    const W = Math.min(vw * 0.92, 420);
+    const H = W * 0.68;
+    return { W, H };
+  }
+
+  useEffect(() => {
+    const onResize = () => setDims(calcDims());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const { W, H } = dims;
   const cx = W / 2;
   const cy = H * 0.55;
   const rx = W * 0.38;
@@ -56,6 +69,8 @@ export function TrickArea() {
 
   const ARC_START = -160;
   const ARC_END = -20;
+  const cardW = W * 0.18; // card width = 18% of container
+  const cardH = cardW * 1.4;
 
   function getCardPosition(index: number, total: number) {
     const angle =
@@ -64,16 +79,16 @@ export function TrickArea() {
         : ARC_START + (index / (total - 1)) * (ARC_END - ARC_START);
     const rad = (angle * Math.PI) / 180;
     return {
-      x: cx + rx * Math.cos(rad) - 40,   // 40 = half card width (w-20 = 80px)
-      y: cy + ry * Math.sin(rad) - 56,   // 56 = half card height (h-28 = 112px)
+      x: cx + rx * Math.cos(rad) - cardW / 2,
+      y: cy + ry * Math.sin(rad) - cardH / 2,
       rotate: angle + 90,
     };
   }
 
   return (
     <div
-      className="relative mx-auto"
-      style={{ width: `${W}px`, height: `${H}px` }}
+      className="relative mx-auto w-full"
+      style={{ maxWidth: `${W}px`, height: `${H}px` }}
     >
       {/* Center label */}
       <div
@@ -107,11 +122,12 @@ export function TrickArea() {
             key={play.playOrder}
             className="absolute transition-all duration-300"
             style={{
+              '--card-width': `${cardW}px`,
               left: `${pos.x}px`,
               top: `${pos.y}px`,
               transform: `rotate(${pos.rotate * 0.15}deg)`,
               zIndex: isWinner ? 10 : index,
-            }}
+            } as React.CSSProperties}
           >
             {/* Player name label */}
             <div

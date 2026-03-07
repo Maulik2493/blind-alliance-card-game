@@ -1,6 +1,25 @@
 @import "tailwindcss";
 
-html, body {
+/* Fluid base font: scales between 14px (320px screen) and 16px (768px+) */
+html {
+  font-size: clamp(14px, 3.5vw, 16px);
   background-color: #faf7f2;
   color: #1f2937;
+}
+
+/* Prevent horizontal page overflow at root */
+body {
+  overflow-x: hidden;
+  width: 100%;
+}
+
+/* Reusable horizontal scroll container — used for card hands on mobile */
+.scroll-x {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroll-x::-webkit-scrollbar {
+  display: none;
 }
