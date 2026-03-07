@@ -5,7 +5,7 @@ import type { Trick } from './trick';
 import { resolveTrick } from './trick';
 import type { Player } from './player';
 import { buildGameDeck } from './deck';
-import { isValidBid, getMinBid, getMaxTeammateCount } from './bidding';
+import { isValidBid, getMinBid, getMaxTeammateCount, getMaxBid, getCurrentBidder, advanceBidQueue, isBiddingOver, shouldReshuffle } from './bidding';
 import { computeTeamScores, determineWinner } from './scoring';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@ export type GamePhase =
 
 export interface Bid {
   playerId: string;
-  amount: number;
+  amount: number | null;  // null = pass
 }
 
 export interface GameState {
@@ -41,6 +41,7 @@ export interface GameState {
   bids: Bid[];
   highestBid: Bid | null;
   bidderId: string | null;
+  biddingQueue: string[];
 
   trumpSuit: Suit | null;
   teammateConditions: TeammateCondition[];
@@ -81,6 +82,7 @@ export function initGame(playerNames: string[]): GameState {
     bids: [],
     highestBid: null,
     bidderId: null,
+    biddingQueue: [],
 
     trumpSuit: null,
     teammateConditions: [],
@@ -185,6 +187,7 @@ export function dealCards(state: GameState): GameState {
     bids: [],
     highestBid: null,
     bidderId: null,
+    biddingQueue: players.map((p) => p.id),
     trumpSuit: null,
     teammateConditions: [],
     cardInstanceTracker: new Map(),
@@ -200,55 +203,87 @@ export function dealCards(state: GameState): GameState {
 // ─── Bidding ─────────────────────────────────────────────────────────────────
 
 export function placeBid(state: GameState, playerId: string, amount: number): GameState {
+  // Validate it is this player's turn
+  if (getCurrentBidder(state.biddingQueue) !== playerId) {
+    throw new Error('It is not your turn to bid');
+  }
+
+  // Validate bid amount
   if (!isValidBid(amount, state.highestBid?.amount ?? null, state.deckCount)) {
-    return state;
+    throw new Error(
+      `Invalid bid. Must be a multiple of 5 and higher than ${state.highestBid?.amount ?? state.minBid - 5}`,
+    );
   }
 
   const newBid: Bid = { playerId, amount };
-  const nextPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-  return {
+  const newBids = [...state.bids, newBid];
+  const newQueue = advanceBidQueue(state.biddingQueue, playerId, 'bid');
+
+  const newState: GameState = {
     ...state,
-    bids: [...state.bids, newBid],
+    bids: newBids,
     highestBid: newBid,
-    currentPlayerIndex: nextPlayerIndex,
+    biddingQueue: newQueue,
   };
-}
 
-export function passBid(state: GameState, playerId: string): GameState {
-  const newBids = [...state.bids, { playerId, amount: 0 }]; // 0 = pass
-  const passCount = newBids.filter((b) => b.amount === 0).length;
-  const allPassed = passCount === state.players.length;
-  const nextPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-
-  // If everyone passed with no real bid → re-deal
-  if (allPassed && state.highestBid === null) {
-    return dealCards(state);
-  }
-
-  // If all other players passed (one bidder remains) → bidding complete
-  const nonPassCount = state.players.length - passCount;
-  if (nonPassCount <= 1 && state.highestBid !== null) {
-    const bidderId = state.highestBid.playerId;
+  // Check if bidding is over
+  if (isBiddingOver(newQueue, newBid, state.deckCount)) {
     const players = state.players.map((p) => ({
       ...p,
-      team: p.id === bidderId ? ('bidder' as const) : p.team,
-      isRevealed: p.id === bidderId ? true : p.isRevealed,
+      team: p.id === playerId ? ('bidder' as const) : p.team,
+      isRevealed: p.id === playerId ? true : p.isRevealed,
     }));
-
     return {
-      ...state,
-      bids: newBids,
-      bidderId,
+      ...newState,
+      bidderId: playerId,
       players,
       phase: 'trump_select',
     };
   }
 
-  return {
+  return newState;
+}
+
+export function passBid(state: GameState, playerId: string): GameState {
+  // Validate it is this player's turn
+  if (getCurrentBidder(state.biddingQueue) !== playerId) {
+    throw new Error('It is not your turn to bid');
+  }
+
+  const newBid: Bid = { playerId, amount: null };
+  const newBids = [...state.bids, newBid];
+  const newQueue = advanceBidQueue(state.biddingQueue, playerId, 'pass');
+
+  // Check if everyone passed with no bids placed → reshuffle
+  if (newQueue.length === 0) {
+    if (shouldReshuffle(newBids)) {
+      return dealCards(state);
+    }
+  }
+
+  const newState: GameState = {
     ...state,
     bids: newBids,
-    currentPlayerIndex: nextPlayerIndex,
+    biddingQueue: newQueue,
   };
+
+  // Check if bidding is over (one player left in queue)
+  if (isBiddingOver(newQueue, state.highestBid, state.deckCount)) {
+    const winnerId = newQueue[0]!;
+    const players = state.players.map((p) => ({
+      ...p,
+      team: p.id === winnerId ? ('bidder' as const) : p.team,
+      isRevealed: p.id === winnerId ? true : p.isRevealed,
+    }));
+    return {
+      ...newState,
+      bidderId: winnerId,
+      players,
+      phase: 'trump_select',
+    };
+  }
+
+  return newState;
 }
 
 // ─── Trump Selection ─────────────────────────────────────────────────────────

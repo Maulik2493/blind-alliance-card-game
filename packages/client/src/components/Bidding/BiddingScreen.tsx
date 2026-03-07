@@ -8,14 +8,14 @@ export function BiddingScreen() {
   const bids = useGameStore((s) => s.bids);
   const highestBid = useGameStore((s) => s.highestBid);
   const minBid = useGameStore((s) => s.minBid);
-  const isMyTurn = useGameStore((s) => s.isMyTurn);
-  const currentPlayer = useGameStore((s) => s.currentPlayer);
   const deckCount = useGameStore((s) => s.deckCount);
   const placeBid = useGameStore((s) => s.placeBid);
   const passBid = useGameStore((s) => s.passBid);
+  const biddingQueue = useGameStore((s) => s.biddingQueue);
+  const myPlayerId = useGameStore((s) => s.myPlayerId);
 
-  const myTurn = isMyTurn();
-  const current = currentPlayer();
+  const isMyBiddingTurn = biddingQueue[0] === myPlayerId;
+  const currentBidderName = players.find((p) => p.id === biddingQueue[0])?.name ?? '...';
   const minimumBid = nextValidBid(highestBid?.amount ?? null, deckCount as 1 | 2);
   const [bidAmount, setBidAmount] = useState(minimumBid);
   const [showHand, setShowHand] = useState(false);
@@ -30,6 +30,10 @@ export function BiddingScreen() {
   useEffect(() => {
     setCurrentBid(nextValidBid(highestBid?.amount ?? null, deckCount as 1 | 2));
   }, [highestBid?.amount, deckCount]);
+
+  const passedPlayerIds = players
+    .filter((p) => !biddingQueue.includes(p.id))
+    .map((p) => p.id);
 
   return (
     <div className="flex flex-col md:flex-row gap-4 pb-16 md:pb-0">
@@ -60,6 +64,58 @@ export function BiddingScreen() {
           <p className="text-gray-400">Minimum bid: {minBid}</p>
         </div>
 
+        {/* Queue status */}
+        <div className="space-y-1">
+          <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+            Still Bidding ({biddingQueue.length} players)
+          </p>
+          {biddingQueue.map((playerId, index) => {
+            const player = players.find((p) => p.id === playerId);
+            const isCurrentBidder = index === 0;
+            const isMe = playerId === myPlayerId;
+            return (
+              <div
+                key={playerId}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
+                  isCurrentBidder
+                    ? 'bg-amber-100 border border-amber-300 font-bold'
+                    : 'bg-gray-50'
+                }`}
+              >
+                {isCurrentBidder && (
+                  <span className="text-amber-500 text-xs">▶</span>
+                )}
+                <span className={isMe ? 'text-amber-600' : 'text-gray-700'}>
+                  {player?.name ?? playerId}
+                  {isMe ? ' (you)' : ''}
+                </span>
+                {isCurrentBidder && (
+                  <span className="ml-auto text-xs text-amber-500 font-medium">
+                    Bidding now
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Passed players */}
+        {passedPlayerIds.length > 0 && (
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Passed</p>
+            <div className="flex flex-wrap gap-2">
+              {passedPlayerIds.map((id) => (
+                <span
+                  key={id}
+                  className="text-xs bg-gray-100 text-gray-400 px-2 py-1 rounded-full line-through"
+                >
+                  {players.find((p) => p.id === id)?.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Bid history */}
         <div className="space-y-1 max-h-48 overflow-y-auto">
           {bids.map((bid, i) => {
@@ -73,14 +129,14 @@ export function BiddingScreen() {
                   isHighest ? 'bg-amber-50 text-amber-600 font-semibold' : 'text-gray-600'
                 }`}
               >
-                {name}: {bid.amount === 0 ? 'PASS' : bid.amount}
+                {name}: {bid.amount === null ? 'PASS' : bid.amount}
               </div>
             );
           })}
         </div>
 
         {/* My turn controls */}
-        {myTurn ? (
+        {isMyBiddingTurn ? (
           <div className="space-y-3 border-t border-gray-200 pt-3">
             <p className="text-green-600 font-semibold text-sm">Your turn to bid!</p>
 
@@ -116,14 +172,12 @@ export function BiddingScreen() {
 
             {/* Mobile: chip-based bid selector */}
             <div className="md:hidden space-y-3">
-              {/* Current bid display */}
               <div className="text-center">
                 <span className="text-xs text-gray-500 uppercase tracking-wide">Your Bid</span>
                 <div className="text-4xl font-bold text-amber-600 my-2">{currentBid}</div>
                 <span className="text-xs text-gray-400">Min: {minimumBid}</span>
               </div>
 
-              {/* Quick-add chips */}
               <div>
                 <p className="text-xs text-gray-500 mb-2 text-center">Add to bid:</p>
                 <div className="flex gap-2 justify-center flex-wrap">
@@ -139,7 +193,6 @@ export function BiddingScreen() {
                 </div>
               </div>
 
-              {/* Quick-subtract chips */}
               <div>
                 <p className="text-xs text-gray-500 mb-2 text-center">Remove from bid:</p>
                 <div className="flex gap-2 justify-center flex-wrap">
@@ -160,7 +213,6 @@ export function BiddingScreen() {
                 </div>
               </div>
 
-              {/* Action buttons */}
               <div className="flex flex-col gap-2 mt-2">
                 <button
                   onClick={() => placeBid(currentBid)}
@@ -179,8 +231,8 @@ export function BiddingScreen() {
           </div>
         ) : (
           <div className="border-t border-gray-200 pt-3">
-            <p className="text-gray-500 text-sm">
-              Waiting for <span className="text-gray-800 font-semibold">{current?.name ?? '...'}</span> to bid...
+            <p className="text-center text-gray-500 py-4">
+              Waiting for <span className="text-gray-800 font-semibold">{currentBidderName}</span> to bid...
             </p>
           </div>
         )}

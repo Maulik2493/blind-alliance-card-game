@@ -2818,3 +2818,446 @@ even more obvious, especially important with bigger cards:
   In CardComponent, use animateHighlight to conditionally add animate-bounce:
     className={`... ${animateHighlight ? 'animate-bounce' : ''}`}
 ```
+# PHASE 9 — Queue-Based Bidding System
+
+## Apply Order
+9.1 → 9.2 → 9.3 → 9.4 → 9.5
+
+---
+
+## Fix 9.1 — Update bidding types and state in core
+```
+Update packages/core/src/gameState.ts and packages/core/src/bidding.ts
+
+── Part A: Add bidding queue to GameState ───────────────────────────────────
+
+Add these fields to the GameState interface:
+
+  biddingQueue: string[]    // ordered list of playerIds still in bidding
+                            // front of array = current bidder's turn
+                            // players are removed when they pass
+                            // players move to back when they bid
+
+Replace the existing bids array type with:
+  bids: Bid[]               // full history of all bids and passes (unchanged)
+
+── Part B: Update Bid type ───────────────────────────────────────────────────
+
+Update the Bid interface:
+  interface Bid {
+    playerId: string
+    amount: number | null   // null = pass
+  }
+
+── Part C: Initialize queue in initGame() ───────────────────────────────────
+
+In initGame(), set:
+  biddingQueue: players.map(p => p.id)
+  // Queue starts with all players in their original seating order
+
+── Part D: Update getMinBid and add getMaxBid ───────────────────────────────
+
+In packages/core/src/bidding.ts:
+
+  function getMinBid(deckCount: 1 | 2): number
+    return deckCount === 1 ? 125 : 250   // unchanged
+
+  Add new exported function:
+  function getMaxBid(deckCount: 1 | 2): number
+    return deckCount === 1 ? 250 : 500   // total points = immediate win
+
+  Export getMaxBid from packages/core/src/index.ts
+
+── Part E: Add queue helper functions in bidding.ts ─────────────────────────
+
+  function isValidBid(
+    amount: number,
+    currentHighest: number | null,
+    deckCount: 1 | 2
+  ): boolean
+    1. amount % 5 === 0
+    2. amount >= getMinBid(deckCount)
+    3. amount > (currentHighest ?? 0)
+    All three must be true. Unchanged from before.
+
+  function getCurrentBidder(biddingQueue: string[]): string | null
+    return biddingQueue[0] ?? null
+    The front of the queue is always whose turn it is to bid.
+
+  function advanceBidQueue(
+    biddingQueue: string[],
+    playerId: string,
+    action: 'bid' | 'pass'
+  ): string[]
+    if action === 'pass':
+      return biddingQueue.filter(id => id !== playerId)
+      // Remove player from queue entirely — they cannot bid again
+    if action === 'bid':
+      const without = biddingQueue.filter(id => id !== playerId)
+      return [...without, playerId]
+      // Remove from front, push to back — they can bid again later
+
+  function isBiddingOver(
+    biddingQueue: string[],
+    highestBid: Bid | null,
+    deckCount: 1 | 2
+  ): boolean
+    return biddingQueue.length <= 1 ||
+           (highestBid !== null && highestBid.amount === getMaxBid(deckCount))
+    // Bidding ends when:
+    // 1. Only one player remains in queue (they win)
+    // 2. Someone bids the maximum (total points)
+
+  function shouldReshuffle(bids: Bid[]): boolean
+    return bids.length === 0 ||
+           bids.every(b => b.amount === null)
+    // Reshuffle if no bids were placed at all
+    // (everyone passed on first rotation without any bid)
+
+  Export all new functions from packages/core/src/index.ts
+```
+
+---
+
+## Fix 9.2 — Update placeBid and passBid in gameState.ts
+```
+Update packages/core/src/gameState.ts
+
+Replace the existing placeBid() and passBid() functions entirely.
+
+── placeBid() ────────────────────────────────────────────────────────────────
+
+  function placeBid(
+    state: GameState,
+    playerId: string,
+    amount: number
+  ): GameState {
+
+    // Validate it is this player's turn
+    if (getCurrentBidder(state.biddingQueue) !== playerId) {
+      throw new Error('It is not your turn to bid')
+    }
+
+    // Validate bid amount
+    if (!isValidBid(amount, state.highestBid?.amount ?? null, state.deckCount)) {
+      throw new Error(
+        `Invalid bid. Must be a multiple of 5 and higher than ${state.highestBid?.amount ?? state.minBid - 5}`
+      )
+    }
+
+    const newBid: Bid = { playerId, amount }
+    const newBids = [...state.bids, newBid]
+    const newQueue = advanceBidQueue(state.biddingQueue, playerId, 'bid')
+
+    const newState = {
+      ...state,
+      bids: newBids,
+      highestBid: newBid,
+      biddingQueue: newQueue,
+    }
+
+    // Check if bidding is over
+    if (isBiddingOver(newQueue, newBid, state.deckCount)) {
+      return {
+        ...newState,
+        bidderId: playerId,
+        phase: 'trump_select'
+      }
+    }
+
+    return newState
+  }
+
+── passBid() ─────────────────────────────────────────────────────────────────
+
+  function passBid(
+    state: GameState,
+    playerId: string
+  ): GameState {
+
+    // Validate it is this player's turn
+    if (getCurrentBidder(state.biddingQueue) !== playerId) {
+      throw new Error('It is not your turn to bid')
+    }
+
+    const newBid: Bid = { playerId, amount: null }
+    const newBids = [...state.bids, newBid]
+    const newQueue = advanceBidQueue(state.biddingQueue, playerId, 'pass')
+
+    // Check if everyone passed with no bids placed → reshuffle
+    if (newQueue.length === 0 && shouldReshuffle(newBids)) {
+      return {
+        ...state,
+        bids: [],
+        biddingQueue: state.players.map(p => p.id),
+        highestBid: null,
+        phase: 'dealing'   // triggers reshuffle
+      }
+    }
+
+    const newState = {
+      ...state,
+      bids: newBids,
+      biddingQueue: newQueue,
+    }
+
+    // Check if bidding is over (one player left in queue)
+    if (isBiddingOver(newQueue, state.highestBid, state.deckCount)) {
+      const winnerId = newQueue[0]
+      return {
+        ...newState,
+        bidderId: winnerId,
+        phase: 'trump_select'
+      }
+    }
+
+    return newState
+  }
+```
+
+---
+
+## Fix 9.3 — Update server GameRoom.ts
+```
+Update packages/server/src/GameRoom.ts
+
+── Update applyBid() ────────────────────────────────────────────────────────
+
+  applyBid(playerId: string, amount: number): void {
+    // Validate it is this player's turn using queue
+    const currentBidder = getCurrentBidder(this.state.biddingQueue)
+    if (currentBidder !== playerId) {
+      throw new Error('It is not your turn to bid')
+    }
+    this.state = corePlaceBid(this.state, playerId, amount)
+  }
+
+── Update applyPass() ───────────────────────────────────────────────────────
+
+  applyPass(playerId: string): void {
+    const currentBidder = getCurrentBidder(this.state.biddingQueue)
+    if (currentBidder !== playerId) {
+      throw new Error('It is not your turn to bid')
+    }
+    this.state = corePassBid(this.state, playerId)
+  }
+
+── Update getSanitizedStateFor() ────────────────────────────────────────────
+
+Include biddingQueue in ClientGameState:
+  biddingQueue: this.state.biddingQueue
+
+── Update startGame() ───────────────────────────────────────────────────────
+
+After dealCards(), reinitialize the bidding queue with all player IDs
+in their seating order:
+  this.state = {
+    ...this.state,
+    biddingQueue: this.state.players.map(p => p.id),
+    bids: [],
+    highestBid: null,
+    bidderId: null,
+    phase: 'bidding'
+  }
+```
+
+---
+
+## Fix 9.4 — Update client store and BiddingScreen
+```
+── Part A: Update gameStore.ts ──────────────────────────────────────────────
+
+Add to store interface:
+  biddingQueue: string[]
+
+Add to initial state:
+  biddingQueue: []
+
+Update socket.on('state_update') handler to include biddingQueue
+from incoming ClientGameState (it is already spread via ...state
+so no additional change needed if biddingQueue is in ClientGameState).
+
+Update isMyTurn() selector — during bidding phase use queue:
+  isMyTurn: () => {
+    const { phase, biddingQueue, currentPlayerIndex, players, myPlayerId } = get()
+    if (phase === 'bidding') {
+      return biddingQueue[0] === myPlayerId
+    }
+    return players[currentPlayerIndex]?.id === myPlayerId
+  }
+
+── Part B: Update BiddingScreen.tsx ─────────────────────────────────────────
+
+Read biddingQueue from store:
+  const biddingQueue = useGameStore(s => s.biddingQueue)
+  const players = useGameStore(s => s.players)
+  const myPlayerId = useGameStore(s => s.myPlayerId)
+
+── Queue status display ──────────────────────────────────────────────────────
+
+Add a queue display section showing who is still in the bidding:
+
+  <div className="space-y-1">
+    <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+      Still Bidding ({biddingQueue.length} players)
+    </p>
+    {biddingQueue.map((playerId, index) => {
+      const player = players.find(p => p.id === playerId)
+      const isCurrentBidder = index === 0
+      const isMe = playerId === myPlayerId
+      return (
+        <div
+          key={playerId}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg
+                      text-sm ${
+            isCurrentBidder
+              ? 'bg-amber-100 border border-amber-300 font-bold'
+              : 'bg-gray-50'
+          }`}
+        >
+          { isCurrentBidder && (
+            <span className="text-amber-500 text-xs">▶</span>
+          )}
+          <span className={isMe ? 'text-amber-600' : 'text-gray-700'}>
+            {player?.name ?? playerId}
+            {isMe ? ' (you)' : ''}
+          </span>
+          { isCurrentBidder && (
+            <span className="ml-auto text-xs text-amber-500 font-medium">
+              Bidding now
+            </span>
+          )}
+        </div>
+      )
+    })}
+  </div>
+
+── Show passed players separately ───────────────────────────────────────────
+
+  const passedPlayerIds = players
+    .filter(p => !biddingQueue.includes(p.id))
+    .map(p => p.id)
+
+  { passedPlayerIds.length > 0 && (
+    <div className="mt-3">
+      <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">
+        Passed
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {passedPlayerIds.map(id => (
+          <span key={id}
+                className="text-xs bg-gray-100 text-gray-400
+                           px-2 py-1 rounded-full line-through">
+            {players.find(p => p.id === id)?.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  )}
+
+── Bid input: only show when it is my turn ───────────────────────────────────
+
+  Replace disabled={!isMyTurn} with a condition that also
+  checks the queue:
+
+  const isMyBiddingTurn = biddingQueue[0] === myPlayerId
+
+  Show bid chips and buttons only when isMyBiddingTurn is true.
+  When it is not my turn, show:
+    <p className="text-center text-gray-500 py-4">
+      Waiting for {players.find(p => p.id === biddingQueue[0])?.name} to bid...
+    </p>
+```
+
+---
+
+## Fix 9.5 — Update tests
+```
+Update packages/core/tests/bidding.test.ts
+
+Replace all existing bidding tests with these queue-based tests:
+
+── Queue initialization ──────────────────────────────────────────────────────
+
+test('biddingQueue initializes with all players in order'):
+  state = initGame(['p1', 'p2', 'p3', 'p4'])
+  state = dealCards(state)
+  expect(state.biddingQueue).toEqual(['p1', 'p2', 'p3', 'p4'])
+
+── Passing removes player from queue ────────────────────────────────────────
+
+test('passing removes player from queue'):
+  state = passBid(state, 'p1')
+  expect(state.biddingQueue).toEqual(['p2', 'p3', 'p4'])
+  expect(state.biddingQueue).not.toContain('p1')
+
+── Bidding moves player to back of queue ────────────────────────────────────
+
+test('bidding moves player to back of queue'):
+  state = placeBid(state, 'p1', 125)
+  expect(state.biddingQueue[0]).toBe('p2')
+  expect(state.biddingQueue[state.biddingQueue.length - 1]).toBe('p1')
+
+── Last player in queue wins bid ────────────────────────────────────────────
+
+test('last player remaining in queue wins bid automatically'):
+  state = placeBid(state, 'p1', 125)
+  state = passBid(state, 'p2')
+  state = passBid(state, 'p3')
+  state = passBid(state, 'p4')
+  // p1 is now the only one left
+  expect(state.phase).toBe('trump_select')
+  expect(state.bidderId).toBe('p1')
+
+── Max bid wins immediately ──────────────────────────────────────────────────
+
+test('bidding max points ends bidding immediately'):
+  state = placeBid(state, 'p1', 250)   // max for 1 deck
+  expect(state.phase).toBe('trump_select')
+  expect(state.bidderId).toBe('p1')
+
+── Everyone passes → reshuffle ──────────────────────────────────────────────
+
+test('all players passing with no bids triggers reshuffle'):
+  state = passBid(state, 'p1')
+  state = passBid(state, 'p2')
+  state = passBid(state, 'p3')
+  state = passBid(state, 'p4')
+  expect(state.phase).toBe('dealing')
+  expect(state.bids).toHaveLength(0)
+  expect(state.biddingQueue).toHaveLength(4)  // reset to all players
+
+── Cannot bid out of turn ────────────────────────────────────────────────────
+
+test('bidding out of turn throws error'):
+  expect(() => placeBid(state, 'p2', 125)).toThrow('It is not your turn')
+
+── Multi-round bidding ───────────────────────────────────────────────────────
+
+test('bidding can go multiple rounds before resolving'):
+  state = placeBid(state, 'p1', 125)  // p1 bids, goes to back
+  state = placeBid(state, 'p2', 130)  // p2 bids, goes to back
+  state = placeBid(state, 'p3', 135)  // p3 bids, goes to back
+  state = passBid(state, 'p4')        // p4 passes, removed
+  state = placeBid(state, 'p1', 140)  // p1 bids again
+  state = passBid(state, 'p2')        // p2 passes
+  state = passBid(state, 'p3')        // p3 passes
+  // p1 is last in queue
+  expect(state.phase).toBe('trump_select')
+  expect(state.bidderId).toBe('p1')
+  expect(state.highestBid?.amount).toBe(140)
+
+── Invalid bid throws ────────────────────────────────────────────────────────
+
+test('bid not multiple of 5 throws'):
+  expect(() => placeBid(state, 'p1', 127)).toThrow()
+
+test('bid below minimum throws'):
+  expect(() => placeBid(state, 'p1', 100)).toThrow()
+
+test('bid not higher than current highest throws'):
+  state = placeBid(state, 'p1', 150)
+  state = placeBid(state, 'p2', 150)  // not higher → throws
+  // Actually p2 is now at front after p1 bid
+  expect(() => placeBid(state, 'p2', 150)).toThrow()
+```

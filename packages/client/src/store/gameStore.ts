@@ -33,6 +33,7 @@ export interface ClientGameState {
   tricks: Trick[];
   currentTrick: Trick | null;
   currentPlayerIndex: number;
+  biddingQueue: string[];
   bidderTeamScore: number;
   oppositionTeamScore: number;
   winner: 'bidder_team' | 'opposition_team' | null;
@@ -71,6 +72,7 @@ interface GameStore {
   tricks: Trick[];
   currentTrick: Trick | null;
   currentPlayerIndex: number;
+  biddingQueue: string[];
   bidderTeamScore: number;
   oppositionTeamScore: number;
   winner: 'bidder_team' | 'opposition_team' | null;
@@ -276,6 +278,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     tricks: [],
     currentTrick: null,
     currentPlayerIndex: 0,
+    biddingQueue: [],
     bidderTeamScore: 0,
     oppositionTeamScore: 0,
     winner: null,
@@ -341,6 +344,9 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     isMyTurn: () => {
       const s = get();
+      if (s.phase === 'bidding') {
+        return s.biddingQueue[0] === s.myPlayerId;
+      }
       return s.players[s.currentPlayerIndex]?.id === s.myPlayerId;
     },
 

@@ -28,6 +28,7 @@ function makeMinimalState(overrides: Partial<GameState> = {}): GameState {
     bids: [],
     highestBid: null,
     bidderId: 'p3',
+    biddingQueue: [],
     trumpSuit: 'spades',
     teammateConditions: [],
     maxTeammateCount: 1,

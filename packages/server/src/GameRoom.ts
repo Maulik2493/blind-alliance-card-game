@@ -74,16 +74,23 @@ export class GameRoom {
     }
     this.state = dealCards(this.state);
     // Transition from 'dealing' to 'bidding' phase
-    this.state = { ...this.state, phase: 'bidding' };
+    this.state = {
+      ...this.state,
+      phase: 'bidding',
+      biddingQueue: this.state.players.map((p) => p.id),
+      bids: [],
+      highestBid: null,
+      bidderId: null,
+    };
   }
 
   applyBid(playerId: string, amount: number): void {
-    this.validateCurrentPlayer(playerId);
+    // Core validates queue turn order
     this.state = placeBid(this.state, playerId, amount);
   }
 
   applyPass(playerId: string): void {
-    this.validateCurrentPlayer(playerId);
+    // Core validates queue turn order
     this.state = passBid(this.state, playerId);
   }
 
@@ -153,6 +160,7 @@ export class GameRoom {
       tricks: this.state.tricks,
       currentTrick: this.state.currentTrick,
       currentPlayerIndex: this.state.currentPlayerIndex,
+      biddingQueue: this.state.biddingQueue,
       bidderTeamScore: this.state.bidderTeamScore,
       oppositionTeamScore: this.state.oppositionTeamScore,
       winner: this.state.winner,

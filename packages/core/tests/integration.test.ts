@@ -62,6 +62,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     bids: [],
     highestBid: null,
     bidderId: 'p2',
+    biddingQueue: [],
     trumpSuit: 'spades',
     teammateConditions: [],
     maxTeammateCount: 1,

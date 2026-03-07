@@ -34,6 +34,7 @@ export interface ClientGameState {
   tricks: Trick[];
   currentTrick: Trick | null;
   currentPlayerIndex: number;
+  biddingQueue: string[];
 
   bidderTeamScore: number;
   oppositionTeamScore: number;
