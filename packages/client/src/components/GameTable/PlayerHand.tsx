@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { CardComponent } from '../shared/CardComponent';
 
@@ -12,10 +13,32 @@ export function PlayerHand({ disabled: forceDisabled }: { disabled?: boolean }) 
   const valid = myTurn ? validCards() : [];
   const current = currentPlayer();
 
+  const [showPulse, setShowPulse] = useState(false);
+
+  useEffect(() => {
+    if (myTurn) {
+      setShowPulse(true);
+      const t = setTimeout(() => setShowPulse(false), 3000);
+      return () => clearTimeout(t);
+    } else {
+      setShowPulse(false);
+    }
+  }, [myTurn]);
+
   const isCardValid = (card: typeof myHand[0]) =>
     valid.some(
       (v) => v.suit === card.suit && v.rank === card.rank && v.deckIndex === card.deckIndex,
     );
+
+  // Mobile fan offset calculation
+  const CARD_WIDTH = 80;
+  const MIN_VISIBLE = 28;
+  const MAX_OFFSET = 56;
+  const screenWidth = typeof window !== 'undefined' ? window.innerWidth - 32 : 360;
+  const naturalOffset = Math.floor(
+    (screenWidth - CARD_WIDTH) / Math.max(myHand.length - 1, 1),
+  );
+  const offset = Math.min(MAX_OFFSET, Math.max(MIN_VISIBLE, naturalOffset));
 
   return (
     <div className="pb-16 md:pb-0">
@@ -32,37 +55,33 @@ export function PlayerHand({ disabled: forceDisabled }: { disabled?: boolean }) 
       </div>
 
       {/* Mobile layout */}
-      <div className="md:hidden w-full overflow-x-auto pb-2">
+      <div className="md:hidden w-full overflow-visible pb-2">
         <div
-          className="relative mx-auto"
+          className="relative mx-auto pt-6"
           style={{
-            height: '132px',
-            width: `${Math.min(
-              64 + 48 * Math.max(myHand.length - 1, 0),
-              myHand.length * 48 + 20,
-            )}px`,
+            width: `${CARD_WIDTH + offset * Math.max(myHand.length - 1, 0)}px`,
             minWidth: '100%',
           }}
         >
           {myHand.map((card, index) => {
             const isValid = isCardValid(card);
-            const offset =
-              myHand.length <= 8
-                ? 48
-                : Math.floor((window.innerWidth - 48) / (myHand.length - 1));
             return (
               <div
                 key={`${card.suit}-${card.rank}-${card.deckIndex}`}
-                className={`absolute transition-transform duration-150 ${
-                  isValid && myTurn ? '-translate-y-3' : 'translate-y-0'
-                }`}
-                style={{ left: `${index * offset}px`, top: '22px', zIndex: index }}
+                className={`transition-transform duration-150 ${
+                  isValid && myTurn ? '-translate-y-4' : 'translate-y-0'
+                } ${index === 0 ? '' : 'absolute'}`}
+                style={index === 0
+                  ? { position: 'relative', zIndex: 0 }
+                  : { left: `${index * offset}px`, top: 0, zIndex: index }
+                }
               >
                 <CardComponent
                   card={card}
                   onClick={myTurn && isValid ? () => playCard(card) : undefined}
                   disabled={!myTurn || !isValid}
                   highlighted={myTurn && isValid}
+                  animateHighlight={myTurn && isValid && showPulse}
                 />
               </div>
             );
@@ -79,6 +98,7 @@ export function PlayerHand({ disabled: forceDisabled }: { disabled?: boolean }) 
             highlighted={myTurn && isCardValid(card)}
             disabled={!myTurn || !isCardValid(card)}
             onClick={myTurn && isCardValid(card) ? () => playCard(card) : undefined}
+            animateHighlight={myTurn && isCardValid(card) && showPulse}
           />
         ))}
       </div>

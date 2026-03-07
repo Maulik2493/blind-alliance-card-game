@@ -7,6 +7,8 @@ export function TrickArea() {
   const currentTrick = useGameStore((s) => s.currentTrick);
   const tricks = useGameStore((s) => s.tricks);
   const players = useGameStore((s) => s.players);
+  const trumpSuit = useGameStore((s) => s.trumpSuit);
+  const myPlayerId = useGameStore((s) => s.myPlayerId);
 
   const [displayedPlays, setDisplayedPlays] = useState<TrickPlay[]>([]);
   const [trickWinner, setTrickWinner] = useState<string | null>(null);
@@ -24,9 +26,6 @@ export function TrickArea() {
       setTrickWinner(null);
       setDisplayedPlays(currentTrick.plays);
     } else if (!currentTrick && tricks.length > 0) {
-      // Trick just completed: the server sets currentTrick to null and pushes
-      // the resolved trick (with all plays + winnerId) into tricks[].
-      // Show the completed trick for 2 seconds so the last card is visible.
       const lastTrick = tricks[tricks.length - 1]!;
       setDisplayedPlays(lastTrick.plays);
       setTrickWinner(lastTrick.winnerId);
@@ -46,32 +45,96 @@ export function TrickArea() {
     };
   }, [currentTrick, currentTrick?.plays.length, tricks.length]);
 
-  if (displayedPlays.length === 0) {
-    return (
-      <div className="text-gray-500 text-center">
-        Waiting for first card...
-      </div>
-    );
+  // Arc layout calculations
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const W = isMobile ? 300 : 400;
+  const H = isMobile ? 220 : 280;
+  const cx = W / 2;
+  const cy = H * 0.55;
+  const rx = W * 0.38;
+  const ry = H * 0.42;
+
+  const ARC_START = -160;
+  const ARC_END = -20;
+
+  function getCardPosition(index: number, total: number) {
+    const angle =
+      total === 1
+        ? -90
+        : ARC_START + (index / (total - 1)) * (ARC_END - ARC_START);
+    const rad = (angle * Math.PI) / 180;
+    return {
+      x: cx + rx * Math.cos(rad) - 40,   // 40 = half card width (w-20 = 80px)
+      y: cy + ry * Math.sin(rad) - 56,   // 56 = half card height (h-28 = 112px)
+      rotate: angle + 90,
+    };
   }
 
   return (
-    <div className="space-y-4">
-      {trickWinner && (
-        <div className="text-center font-bold text-green-600 text-lg mb-2 animate-pulse">
-          {players.find((p) => p.id === trickWinner)?.name ?? trickWinner} wins this trick!
-        </div>
-      )}
-      <div className="flex gap-4 justify-center items-end">
-        {displayedPlays.map((play, i) => {
-          const playerName = players.find((p) => p.id === play.playerId)?.name ?? play.playerId;
-          return (
-            <div key={i} className="flex flex-col items-center gap-1">
-              <CardComponent card={play.card} />
-              <span className="text-xs text-gray-400">{playerName}</span>
-            </div>
-          );
-        })}
+    <div
+      className="relative mx-auto"
+      style={{ width: `${W}px`, height: `${H}px` }}
+    >
+      {/* Center label */}
+      <div
+        className="absolute text-xs text-gray-400 text-center pointer-events-none"
+        style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}
+      >
+        {displayedPlays.length === 0 ? (
+          <span>Waiting for first card...</span>
+        ) : trickWinner ? (
+          <span className="text-green-600 font-bold text-sm animate-pulse">
+            {players.find((p) => p.id === trickWinner)?.name} wins!
+          </span>
+        ) : (
+          <span>
+            {displayedPlays.length} / {players.length} played
+          </span>
+        )}
       </div>
+
+      {/* Played cards */}
+      {displayedPlays.map((play, index) => {
+        const pos = getCardPosition(index, displayedPlays.length);
+        const playerName =
+          players.find((p) => p.id === play.playerId)?.name ?? '';
+        const isWinner = play.playerId === trickWinner;
+        const isMyCard = play.playerId === myPlayerId;
+        const isTrump = play.card.suit === trumpSuit;
+
+        return (
+          <div
+            key={play.playOrder}
+            className="absolute transition-all duration-300"
+            style={{
+              left: `${pos.x}px`,
+              top: `${pos.y}px`,
+              transform: `rotate(${pos.rotate * 0.15}deg)`,
+              zIndex: isWinner ? 10 : index,
+            }}
+          >
+            {/* Player name label */}
+            <div
+              className={`text-center text-xs mb-1 font-medium truncate max-w-[64px] ${
+                isMyCard ? 'text-amber-600 font-bold' : 'text-gray-500'
+              }`}
+            >
+              {isMyCard ? 'You' : playerName}
+            </div>
+
+            {/* Card with winner glow or trump indicator */}
+            <div
+              className={`rounded-xl transition-all duration-300 ${
+                isWinner
+                  ? 'ring-4 ring-green-400 ring-offset-2 scale-110 shadow-lg shadow-green-200'
+                  : ''
+              } ${isTrump && !isWinner ? 'ring-2 ring-amber-300' : ''}`}
+            >
+              <CardComponent card={play.card} disabled />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

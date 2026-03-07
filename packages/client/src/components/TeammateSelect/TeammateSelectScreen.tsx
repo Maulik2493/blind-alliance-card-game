@@ -153,14 +153,14 @@ export function TeammateSelectScreen() {
       </div>
 
       {/* Condition slots */}
-      <div className="space-y-4">
+      <div className="space-y-4 pb-32 md:pb-6">
         {slots.map((slot, index) => {
           const dupError = getDuplicateError(index);
           const ftwUsedElsewhere = slots.some(
             (s, i) => i !== index && s.mode === 'first_trick_win',
           );
           return (
-            <div key={index} className="bg-white rounded-2xl border border-amber-100 shadow-sm p-4 space-y-3">
+            <div key={index} id={`condition-slot-${index}`} className="bg-white rounded-2xl border border-amber-100 shadow-sm p-4 space-y-3">
               <div className="flex items-center gap-3">
                 <span className="text-gray-500 font-semibold">Slot {index + 1}</span>
               </div>
@@ -291,13 +291,19 @@ export function TeammateSelectScreen() {
         })}
       </div>
 
-      <div className="sticky bottom-14 md:static px-0 py-3">
+      <div className="
+        fixed bottom-14 left-0 right-0
+        md:static md:bottom-auto
+        px-4 py-3 z-30
+        bg-white border-t border-amber-100 shadow-lg
+        md:bg-transparent md:border-0 md:shadow-none md:px-0 md:py-0
+      ">
         <button
           onClick={handleSubmit}
           disabled={!allValid}
-          className="w-full md:w-auto py-4 md:py-2 px-6 text-base font-bold text-white rounded-xl transition-colors bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          className="w-full md:w-auto py-4 md:py-2 px-6 text-base font-bold text-white rounded-xl transition-colors active:scale-95 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         >
-          Confirm Teammates
+          Confirm Teammates ({slots.filter((s, i) => isSlotValid(s, i)).length}/{maxTeammateCount})
         </button>
       </div>
     </div>

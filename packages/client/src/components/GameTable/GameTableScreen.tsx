@@ -65,7 +65,7 @@ export function GameTableScreen() {
       </div>
 
       {/* Center: Trick Area */}
-      <div className="flex-1 flex items-center justify-center p-2 md:p-6 bg-amber-50 min-h-0">
+      <div className="flex-1 flex items-center justify-center p-2 md:p-6 bg-amber-50 min-h-0 overflow-hidden">
         <TrickArea />
       </div>
 

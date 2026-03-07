@@ -2486,3 +2486,335 @@ SCENARIO 5 — 6 player game stability:
   3. Verify: no freezes, all players receive state updates
   4. Verify: trick winner announcements appear on all devices
 ```
+# PHASE 8 — UI Fixes (Round 3)
+
+## Apply Order
+8.1 → 8.2 → 8.3
+
+---
+
+## Fix 8.1 — Arc/fan layout for trick area (desktop + mobile)
+```
+Replace TrickArea.tsx in packages/client/src/components/GameTable/TrickArea.tsx
+
+The current side-by-side layout breaks with 6+ players.
+Replace it with an arc/fan layout that positions each played card
+in a semicircle around a central point. Works for 3–10 players
+on both desktop and mobile.
+
+── Layout concept ────────────────────────────────────────────────────────────
+
+Cards are positioned absolutely around the center of a circular container.
+Each card is placed at an angle along a semicircle (bottom half of circle).
+The card belonging to the current player is placed at the bottom center.
+Cards are distributed evenly across the arc from left to right
+in clockwise play order.
+
+── Implementation ────────────────────────────────────────────────────────────
+
+  interface TrickAreaProps {
+    plays: TrickPlay[]
+    players: PublicPlayer[]
+    winnerId: string | null
+    ledSuit: Suit | null
+    trumpSuit: Suit | null
+    myPlayerId: string | null
+  }
+
+  export function TrickArea({
+    plays, players, winnerId, ledSuit, trumpSuit, myPlayerId
+  }: TrickAreaProps) {
+
+    // Container dimensions — responsive
+    // Desktop: 400x280px, Mobile: 300x220px
+    const isMobile = window.innerWidth < 768
+    const W = isMobile ? 300 : 400   // container width
+    const H = isMobile ? 220 : 280   // container height
+    const cx = W / 2                 // center x
+    const cy = H * 0.55              // center y (slightly below middle)
+    const rx = W * 0.38              // horizontal radius of arc
+    const ry = H * 0.42              // vertical radius of arc
+
+    // Arc spans from -160deg to -20deg (bottom semicircle, left to right)
+    const ARC_START = -160
+    const ARC_END   = -20
+    const totalPlays = plays.length
+
+    // Calculate angle for each play in clockwise order
+    function getCardPosition(index: number, total: number) {
+      const angle = total === 1
+        ? -90   // single card goes to bottom center
+        : ARC_START + (index / (total - 1)) * (ARC_END - ARC_START)
+      const rad = (angle * Math.PI) / 180
+      return {
+        x: cx + rx * Math.cos(rad) - 32,   // 32 = half card width
+        y: cy + ry * Math.sin(rad) - 48,   // 48 = half card height
+        rotate: angle + 90   // tilt card to face center
+      }
+    }
+
+    return (
+      <div
+        className="relative mx-auto"
+        style={{ width: `${W}px`, height: `${H}px` }}
+      >
+        {/* Center label */}
+        <div
+          className="absolute text-xs text-gray-400 text-center
+                     pointer-events-none"
+          style={{
+            left: '50%', top: '50%',
+            transform: 'translate(-50%, -50%)'
+          }}
+        >
+          { plays.length === 0
+            ? <span>Waiting for first card...</span>
+            : winnerId
+            ? <span className="text-green-600 font-bold text-sm animate-pulse">
+                {players.find(p => p.id === winnerId)?.name} wins!
+              </span>
+            : <span>{plays.length} / {players.length} played</span>
+          }
+        </div>
+
+        {/* Played cards */}
+        {plays.map((play, index) => {
+          const pos = getCardPosition(index, totalPlays)
+          const playerName = players.find(p => p.id === play.playerId)?.name ?? ''
+          const isWinner = play.playerId === winnerId
+          const isMyCard = play.playerId === myPlayerId
+          const isTrump = play.card.suit === trumpSuit
+
+          return (
+            <div
+              key={play.playOrder}
+              className="absolute transition-all duration-300"
+              style={{
+                left: `${pos.x}px`,
+                top: `${pos.y}px`,
+                transform: `rotate(${pos.rotate * 0.15}deg)`,  // subtle tilt
+                zIndex: isWinner ? 10 : index
+              }}
+            >
+              {/* Player name label */}
+              <div
+                className={`text-center text-xs mb-1 font-medium truncate
+                            max-w-[64px] ${
+                  isMyCard ? 'text-amber-600 font-bold' : 'text-gray-500'
+                }`}
+              >
+                {isMyCard ? 'You' : playerName}
+              </div>
+
+              {/* Card with winner glow or trump indicator */}
+              <div className={`
+                rounded-xl transition-all duration-300
+                ${isWinner
+                  ? 'ring-4 ring-green-400 ring-offset-2 scale-110 shadow-lg shadow-green-200'
+                  : ''}
+                ${isTrump && !isWinner
+                  ? 'ring-2 ring-amber-300'
+                  : ''}
+              `}>
+                <CardComponent
+                  card={play.card}
+                  disabled
+                />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+── Usage notes ───────────────────────────────────────────────────────────────
+
+1. Winner card gets a green glow ring + scale-110 lift when trick resolves.
+2. Trump cards get a subtle amber ring so they're identifiable at a glance.
+3. Player name shown above each card — "You" for the current player's card.
+4. "X / Y played" counter in center keeps all players informed.
+5. The subtle rotation (0.15 multiplier) keeps cards nearly upright
+   while giving a natural fan feel — increase multiplier for more tilt.
+6. For desktop, the container is larger so cards have more breathing room.
+7. For mobile, the container fits within the game table's flex-1 area.
+
+── Responsive container in GameTableScreen.tsx ───────────────────────────────
+
+Wrap TrickArea in a centering div that resizes with the screen:
+
+  <div className="flex-1 flex items-center justify-center
+                  p-2 md:p-6 bg-amber-50 min-h-0 overflow-hidden">
+    <TrickArea
+      plays={currentTrickPlays()}
+      players={players}
+      winnerId={currentTrick?.winnerId ?? null}
+      ledSuit={currentTrick?.ledSuit ?? null}
+      trumpSuit={trumpSuit}
+      myPlayerId={myPlayerId}
+    />
+  </div>
+```
+
+---
+
+## Fix 8.2 — TeammateSelector: fix last condition collapsing with confirm button
+```
+Update packages/client/src/components/TeammateSelect/TeammateSelectScreen.tsx
+
+The issue: the last condition slot's content overlaps with the
+Confirm Teammates button because of sticky positioning + insufficient
+bottom padding.
+
+Fix 1 — Add bottom padding to the conditions list:
+  Replace the conditions list wrapper:
+    FROM: <div className="space-y-3">
+    TO:   <div className="space-y-3 pb-32 md:pb-6">
+
+  pb-32 on mobile gives enough room so the last slot is never
+  hidden behind the sticky confirm button.
+  pb-6 on desktop maintains normal spacing.
+
+Fix 2 — Fix the sticky confirm button positioning:
+  Replace the confirm button wrapper:
+
+    <div className="
+      fixed bottom-14 left-0 right-0
+      md:static md:bottom-auto
+      px-4 py-3 z-30
+      bg-white border-t border-amber-100 shadow-lg
+      md:bg-transparent md:border-0 md:shadow-none md:px-0 md:py-0
+    ">
+      <button
+        disabled={!allSlotsFilled}
+        onClick={handleConfirm}
+        className="w-full md:w-auto py-4 md:py-2 px-6
+                   text-base font-bold text-white rounded-xl
+                   transition-colors active:scale-95
+                   bg-amber-500 hover:bg-amber-600
+                   disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        Confirm Teammates ({filledCount}/{maxTeammateCount})
+      </button>
+    </div>
+
+  Key changes:
+  - fixed bottom-14: sits just above the mobile debug drawer bar (h-14)
+  - left-0 right-0: full width on mobile
+  - bg-white + shadow-lg: visually separated from content below it
+  - Shows filled count so bidder knows how many slots remain
+  - md:static: returns to normal document flow on desktop
+
+Fix 3 — Scroll last condition into view automatically:
+  When a new condition slot is added (conditionSlots.length increases),
+  scroll the page to show the new slot:
+
+    useEffect(() => {
+      if (conditionSlots.length > 0) {
+        const lastSlot = document.getElementById(
+          `condition-slot-${conditionSlots.length - 1}`
+        )
+        lastSlot?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+    }, [conditionSlots.length])
+
+  Add id to each slot div:
+    <div id={`condition-slot-${index}`} className="bg-white rounded-2xl ...">
+```
+
+---
+
+## Fix 8.3 — Player hand: bigger cards with more spacing
+```
+Update packages/client/src/components/GameTable/PlayerHand.tsx
+Update packages/client/src/components/shared/CardComponent.tsx
+
+── Part A: Bigger card size in CardComponent ────────────────────────────────
+
+CardComponent currently uses w-16 h-24 (64x96px).
+Increase to w-20 h-28 (80x112px) for better tap targets.
+
+Update CardComponent.tsx:
+
+  Card base size:
+    FROM: className="... w-16 h-24 ..."
+    TO:   className="... w-20 h-28 ..."
+
+  Rank text size:
+    FROM: text-sm
+    TO:   text-base
+
+  Center suit symbol:
+    FROM: text-2xl
+    TO:   text-3xl
+
+  Points badge:
+    FROM: text-xs
+    TO:   text-xs font-bold   (keep small but bolder)
+
+  Keep all other styles (border, shadow, colors) unchanged.
+
+── Part B: Increase spacing in mobile fan layout ────────────────────────────
+
+Update the mobile fan layout in PlayerHand.tsx:
+
+  Card width is now 80px (w-20). Update offset calculation:
+
+  const CARD_WIDTH = 80
+  const MIN_VISIBLE = 28    // minimum px of each card that must peek out
+  const MAX_OFFSET = 56     // maximum spacing between cards (comfortable tap)
+
+  const screenWidth = window.innerWidth - 32  // 16px padding each side
+  const naturalOffset = Math.floor(
+    (screenWidth - CARD_WIDTH) / Math.max(sortedHand.length - 1, 1)
+  )
+  const offset = Math.min(MAX_OFFSET, Math.max(MIN_VISIBLE, naturalOffset))
+
+  Update container dimensions:
+    height: '128px'          // increased from 112px for taller cards
+    width: calculated from offset + CARD_WIDTH as before
+
+  Update the lifted highlight offset for valid cards:
+    FROM: '-translate-y-3'
+    TO:   '-translate-y-4'   // lift slightly more for bigger cards
+
+── Part C: Desktop hand spacing ─────────────────────────────────────────────
+
+Update the desktop hand layout in PlayerHand.tsx:
+
+  FROM: <div className="hidden md:flex flex-wrap gap-1">
+  TO:   <div className="hidden md:flex flex-wrap gap-2">
+
+  gap-2 (8px) instead of gap-1 (4px) gives clear visual separation
+  between cards on desktop, reducing misclicks there too.
+
+── Part D: Valid card visual distinction ────────────────────────────────────
+
+On mobile, valid cards already get -translate-y-4 lift.
+Add an additional subtle pulse animation to make valid cards
+even more obvious, especially important with bigger cards:
+
+  In CardComponent.tsx, when highlighted prop is true:
+    Add to className: animate-bounce
+
+  But only for the FIRST 3 seconds after isMyTurn becomes true,
+  then stop (so it's not distracting during the whole turn).
+
+  In PlayerHand.tsx:
+    const [showPulse, setShowPulse] = useState(false)
+
+    useEffect(() => {
+      if (isMyTurn) {
+        setShowPulse(true)
+        const t = setTimeout(() => setShowPulse(false), 3000)
+        return () => clearTimeout(t)
+      }
+    }, [isMyTurn])
+
+  Pass showPulse to CardComponent as animateHighlight prop:
+    highlighted={isMyTurn && isValid}
+    animateHighlight={isMyTurn && isValid && showPulse}
+
+  In CardComponent, use animateHighlight to conditionally add animate-bounce:
+    className={`... ${animateHighlight ? 'animate-bounce' : ''}`}
+```
