@@ -41,6 +41,21 @@ export interface ClientGameState {
   winner: 'bidder_team' | 'opposition_team' | null;
 }
 
+// ─── Game Start Info ───────────────────────────────────────────────────────
+
+export interface GameStartInfo {
+  trumpSuit: Suit;
+  bidderName: string;
+  bidAmount: number;
+  teammateCount: number;
+  conditions: {
+    type: 'card_reveal' | 'first_trick_win';
+    suit: Suit | null;
+    rank: string | null;
+    instance: number | null;
+  }[];
+}
+
 // ─── Client → Server Events ─────────────────────────────────────────────────
 
 export interface ClientToServerEvents {
@@ -66,4 +81,5 @@ export interface ServerToClientEvents {
   player_disconnected: (data: { playerId: string; playerName: string; reconnectWindowSeconds: number }) => void;
   player_reconnected: (data: { playerId: string; playerName: string }) => void;
   player_timed_out: (data: { playerId: string; playerName: string }) => void;
+  game_start_info: (data: GameStartInfo) => void;
 }

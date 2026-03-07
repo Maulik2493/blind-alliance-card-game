@@ -3661,3 +3661,300 @@ on any screen size without JS measurement.
     [ ] Center counter text readable
     [ ] Arc resizes correctly after rotating device
 ```
+# PHASE 11 — Game Start Info Banner
+
+## Apply Order
+11.1 → 11.2 → 11.3
+
+---
+
+## Fix 11.1 — Add game_start_info event from server
+```
+Update packages/server/src/events/onSetConditions.ts
+
+After the teammate conditions are successfully applied and
+broadcastStateUpdate is sent, emit an additional event to all
+players in the room with the game start summary.
+
+Add immediately after broadcastStateUpdate(io, room):
+
+  const state = room.state
+  const bidder = state.players.find(p => p.id === state.bidderId)
+
+  io.to(room.roomId).emit('game_start_info', {
+    trumpSuit: state.trumpSuit,
+    bidderName: bidder?.name ?? '',
+    bidAmount: state.highestBid?.amount ?? 0,
+    teammateCount: state.maxTeammateCount,   // number of teammates (not bidder)
+    conditions: state.teammateConditions.map(c => ({
+      type: c.type,
+      suit: c.suit ?? null,
+      rank: c.rank ?? null,
+      instance: c.instance ?? null,
+      // DO NOT include satisfiedByPlayerId or any player-identifying info
+    }))
+  })
+
+Add GameStartInfo type to packages/server/src/events.ts:
+
+  interface GameStartInfo {
+    trumpSuit: Suit
+    bidderName: string
+    bidAmount: number
+    teammateCount: number
+    conditions: {
+      type: 'card_reveal' | 'first_trick_win'
+      suit: Suit | null
+      rank: string | null
+      instance: number | null
+    }[]
+  }
+```
+
+---
+
+## Fix 11.2 — Store game start info in client store
+```
+Update packages/client/src/gameStore.ts
+
+── Add state ─────────────────────────────────────────────────────────────────
+
+  Add to store interface:
+    gameStartInfo: GameStartInfo | null
+    showGameStartBanner: boolean
+
+  Add to initial state:
+    gameStartInfo: null,
+    showGameStartBanner: false
+
+  Add GameStartInfo type mirroring the server type above.
+
+── Add socket listener ───────────────────────────────────────────────────────
+
+  In setupSocketListeners(), add:
+
+    socket.on('game_start_info', (info: GameStartInfo) => {
+      set({
+        gameStartInfo: info,
+        showGameStartBanner: true
+      })
+    })
+
+── Add dismiss action ────────────────────────────────────────────────────────
+
+  Add to store actions:
+    dismissGameStartBanner: () => set({ showGameStartBanner: false })
+```
+
+---
+
+## Fix 11.3 — GameStartBanner component
+```
+Create packages/client/src/components/shared/GameStartBanner.tsx
+
+This banner slides in from the top when showGameStartBanner is true,
+displays game info for 10 seconds, then slides back out and dismisses.
+
+── Imports and state ────────────────────────────────────────────────────────
+
+  import { useEffect, useState } from 'react'
+  import { useGameStore } from '../../gameStore'
+  import type { Suit } from '@blind-alliance/core'
+
+  const info = useGameStore(s => s.gameStartInfo)
+  const show = useGameStore(s => s.showGameStartBanner)
+  const dismiss = useGameStore(s => s.dismissGameStartBanner)
+
+  const [visible, setVisible] = useState(false)
+  const [progress, setProgress] = useState(100)
+
+  const DURATION_MS = 10000
+
+── Animate in on mount, auto-dismiss after 10s ──────────────────────────────
+
+  useEffect(() => {
+    if (!show || !info) return
+
+    // Trigger slide-in on next frame
+    const showTimer = setTimeout(() => setVisible(true), 50)
+
+    // Countdown progress bar
+    const startTime = Date.now()
+    const progressInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime
+      const remaining = Math.max(0, 100 - (elapsed / DURATION_MS) * 100)
+      setProgress(remaining)
+      if (remaining === 0) clearInterval(progressInterval)
+    }, 50)
+
+    // Slide out then dismiss
+    const hideTimer = setTimeout(() => {
+      setVisible(false)
+      setTimeout(dismiss, 400)  // wait for slide-out animation before unmounting
+    }, DURATION_MS)
+
+    return () => {
+      clearTimeout(showTimer)
+      clearTimeout(hideTimer)
+      clearInterval(progressInterval)
+    }
+  }, [show, info])
+
+  if (!show || !info) return null
+
+── Helper functions ──────────────────────────────────────────────────────────
+
+  function suitSymbol(suit: Suit): string {
+    return { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' }[suit]
+  }
+
+  function suitColor(suit: Suit): string {
+    return {
+      spades: 'text-gray-900',
+      hearts: 'text-red-500',
+      diamonds: 'text-orange-500',
+      clubs: 'text-emerald-700',
+    }[suit]
+  }
+
+  function conditionLabel(c: GameStartInfo['conditions'][number]): string {
+    if (c.type === 'first_trick_win') return 'Wins the first trick'
+    const instance = c.instance === 2 ? '2nd' : '1st'
+    const instanceLabel = c.instance ? `${instance} ` : ''
+    return `Plays ${instanceLabel}${c.rank}${suitSymbol(c.suit!)}`
+  }
+
+── JSX ───────────────────────────────────────────────────────────────────────
+
+  <div
+    className="fixed top-0 left-0 right-0 z-50 flex justify-center
+               pointer-events-none"
+    style={{
+      // Slide in from top when visible, slide out when not
+      transform: visible ? 'translateY(0)' : 'translateY(-110%)',
+      transition: 'transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+      // cubic-bezier gives a slight bounce on slide-in for polish
+    }}
+  >
+    <div
+      className="pointer-events-auto mx-4 mt-3 w-full
+                 bg-white rounded-2xl shadow-2xl
+                 border-2 border-amber-200 overflow-hidden"
+      style={{ maxWidth: '32rem' }}
+    >
+
+      {/* Progress bar — drains left to right over 10 seconds */}
+      <div className="h-1 bg-amber-100">
+        <div
+          className="h-full bg-amber-400 transition-none"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
+      <div className="px-5 py-4 space-y-4">
+
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-gray-800"
+              style={{ fontSize: '1.1rem' }}>
+            Game Starting
+          </h2>
+          <span className="text-xs text-gray-400">
+            {Math.ceil(progress / 10)}s
+          </span>
+        </div>
+
+        {/* Trump suit — large and prominent */}
+        <div className="flex items-center gap-3 bg-amber-50
+                        rounded-xl px-4 py-3">
+          <span className={`font-black ${suitColor(info.trumpSuit)}`}
+                style={{ fontSize: '2.5rem', lineHeight: 1 }}>
+            {suitSymbol(info.trumpSuit)}
+          </span>
+          <div>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Trump Suit
+            </p>
+            <p className={`font-bold text-lg capitalize ${suitColor(info.trumpSuit)}`}>
+              { { spades: 'Spades', hearts: 'Hearts',
+                  diamonds: 'Diamonds', clubs: 'Clubs' }[info.trumpSuit] }
+            </p>
+          </div>
+        </div>
+
+        {/* Bidder + amount + teammate count */}
+        <div className="flex gap-3">
+          <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Bidder
+            </p>
+            <p className="font-bold text-gray-800 truncate">
+              {info.bidderName}
+            </p>
+            <p className="text-sm text-amber-600 font-semibold">
+              Bid: {info.bidAmount}
+            </p>
+          </div>
+          <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              Teammates
+            </p>
+            <p className="font-bold text-gray-800"
+               style={{ fontSize: '1.5rem' }}>
+              {info.teammateCount}
+            </p>
+            <p className="text-xs text-gray-500">
+              secret {info.teammateCount === 1 ? 'ally' : 'allies'}
+            </p>
+          </div>
+        </div>
+
+        {/* Teammate conditions */}
+        <div>
+          <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+            Teammate Conditions
+          </p>
+          <div className="space-y-1.5">
+            {info.conditions.map((c, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-2 bg-yellow-50
+                           border border-yellow-200 rounded-lg px-3 py-2"
+              >
+                <span className="text-yellow-500 text-sm">⚑</span>
+                <span className="text-sm text-gray-700 font-medium">
+                  {conditionLabel(c)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-2 italic">
+            Teammates are revealed when these conditions are met
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+── Mount in App.tsx ──────────────────────────────────────────────────────────
+
+  Import and add <GameStartBanner /> inside App.tsx,
+  placed after <ErrorToast /> and before the main layout div:
+
+    import { GameStartBanner } from './components/shared/GameStartBanner'
+
+    export default function App() {
+      return (
+        <div className="min-h-screen bg-amber-50 ...">
+          <ErrorToast />
+          <GameStartBanner />     ← add here
+          <ReconnectingBanner />
+          ...rest of layout...
+        </div>
+      )
+    }
+
+  Placing it at App root means it overlays every screen correctly
+  and is not affected by any screen's scroll or overflow settings.
+```

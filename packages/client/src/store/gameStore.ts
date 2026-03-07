@@ -6,6 +6,19 @@ import { socket, connectSocket } from '../socket';
 
 // ─── Types (mirrored from server/src/events.ts) ─────────────────────────────
 
+export interface GameStartInfo {
+  trumpSuit: Suit;
+  bidderName: string;
+  bidAmount: number;
+  teammateCount: number;
+  conditions: {
+    type: 'card_reveal' | 'first_trick_win';
+    suit: Suit | null;
+    rank: string | null;
+    instance: number | null;
+  }[];
+}
+
 export interface PublicPlayer {
   id: string;
   name: string;
@@ -84,6 +97,8 @@ interface GameStore {
   isReconnecting: boolean;
   reconnectAttempt: number;
   disconnectedPlayers: { playerId: string; playerName: string }[];
+  gameStartInfo: GameStartInfo | null;
+  showGameStartBanner: boolean;
 
   // Actions
   connect: (playerName: string, roomId?: string) => void;
@@ -95,6 +110,7 @@ interface GameStore {
   playCard: (card: Card) => void;
   clearError: () => void;
   clearLog: () => void;
+  dismissGameStartBanner: () => void;
 
   // Selectors
   currentPlayer: () => PublicPlayer | undefined;
@@ -199,6 +215,11 @@ export const useGameStore = create<GameStore>((set, get) => {
     addLog(`Game over — winner: ${winner}`);
   });
 
+  socket.on('game_start_info' as any, (info: GameStartInfo) => {
+    set({ gameStartInfo: info, showGameStartBanner: true });
+    addLog(`Game starting — trump: ${info.trumpSuit}, bidder: ${info.bidderName}, bid: ${info.bidAmount}`);
+  });
+
   // ── Reconnection Events ───────────────────────────────────────────────
 
   socket.io.on('reconnect_attempt', (attempt: number) => {
@@ -290,6 +311,8 @@ export const useGameStore = create<GameStore>((set, get) => {
     isReconnecting: false,
     reconnectAttempt: 0,
     disconnectedPlayers: [],
+    gameStartInfo: null,
+    showGameStartBanner: false,
 
     // ── Actions ──────────────────────────────────────────────────────────
 
@@ -327,6 +350,8 @@ export const useGameStore = create<GameStore>((set, get) => {
     clearError: () => set({ lastError: null }),
 
     clearLog: () => set({ gameLog: [] }),
+
+    dismissGameStartBanner: () => set({ showGameStartBanner: false }),
 
     // ── Selectors ────────────────────────────────────────────────────────
 
