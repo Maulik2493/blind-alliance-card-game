@@ -34,13 +34,45 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   cors: {
     origin: CLIENT_URL,
     methods: ['GET', 'POST'],
+    // Required for polling on cross-origin requests (Vercel → Railway).
+    // Without credentials: true the browser blocks polling HTTP requests
+    // before they reach Socket.IO.
+    credentials: true,
+    allowedHeaders: ['Content-Type'],
   },
+
+  // Must mirror client transport order for negotiation to succeed
+  transports: ['polling', 'websocket'],
+
+  // 30s for WebSocket upgrade — mobile data is slower than default 10s
+  upgradeTimeout: 30000,
+
+  // Heartbeat — keeps connections alive through mobile network switches
   pingTimeout: 60000,
   pingInterval: 25000,
   connectTimeout: 45000,
-  transports: ['websocket', 'polling'],
-  upgradeTimeout: 30000,
+
   maxHttpBufferSize: 1e6,
+
+  // Support older Android WebViews using Socket.IO Engine v3
+  allowEIO3: true,
+});
+
+// Handle CORS preflight for polling transport.
+// Before cross-origin polling requests (Vercel → Railway), the browser
+// sends an OPTIONS preflight asking "is this allowed?".
+// If not handled correctly the browser cancels the polling request entirely.
+// Socket.IO's built-in CORS does not reliably cover this on all mobile
+// browsers so we handle it explicitly.
+app.options('*', (_req, res) => {
+  res.setHeader(
+    'Access-Control-Allow-Origin',
+    CLIENT_URL,
+  );
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.sendStatus(204);
 });
 
 io.on('connection', (socket) => {

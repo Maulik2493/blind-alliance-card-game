@@ -3958,3 +3958,114 @@ displays game info for 10 seconds, then slides back out and dismisses.
   Placing it at App root means it overlays every screen correctly
   and is not affected by any screen's scroll or overflow settings.
 ```
+# PHASE 12 — Mobile Data Connectivity Fix
+
+## Apply Order
+A1 → A2a → A2b
+
+---
+
+## Change A1 — `packages/client/src/socket.ts`
+
+```
+Replace the entire file with the following:
+
+  import { io } from 'socket.io-client'
+
+  const SERVER_URL =
+    import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
+
+  // Force https:// in production so Socket.IO uses wss:// for WebSocket.
+  // Carrier proxies cannot inspect encrypted wss:// traffic.
+  // Plain ws:// (derived from http://) is visible to proxies and gets dropped,
+  // causing the infinite reconnect loop on mobile data.
+  const SECURE_URL = SERVER_URL.replace(/^http:\/\//, 'https://')
+
+  export const socket = io(
+    import.meta.env.DEV ? SERVER_URL : SECURE_URL,
+    {
+      autoConnect: false,
+
+      // Start with polling first, upgrade to websocket after handshake.
+      // Polling = plain HTTPS requests, never blocked by carrier proxies.
+      // WebSocket upgrade happens silently in background after connect.
+      transports: ['polling', 'websocket'],
+
+      // Allow silent upgrade to WebSocket after polling handshake
+      upgrade: true,
+
+      // Reconnection settings
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      randomizationFactor: 0.5,
+      timeout: 20000,
+    }
+  )
+
+  export const connectSocket = () => socket.connect()
+  export const disconnectSocket = () => socket.disconnect()
+```
+
+---
+
+## Change A2a — `packages/server/src/index.ts`: replace Socket.IO init
+
+```
+Find the existing new Server(httpServer, { ... }) block and replace it:
+
+  const io = new Server(httpServer, {
+    cors: {
+      origin: process.env.CLIENT_URL || 'http://localhost:5173',
+      methods: ['GET', 'POST'],
+      // Required for polling on cross-origin requests (Vercel → Railway).
+      // Without credentials: true the browser blocks polling HTTP requests
+      // before they reach Socket.IO.
+      credentials: true,
+      allowedHeaders: ['Content-Type'],
+    },
+
+    // Must mirror client transport order for negotiation to succeed
+    transports: ['polling', 'websocket'],
+
+    // 30s for WebSocket upgrade — mobile data is slower than default 10s
+    upgradeTimeout: 30000,
+
+    // Heartbeat — keeps connections alive through mobile network switches
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    connectTimeout: 45000,
+
+    maxHttpBufferSize: 1e6,
+
+    // Support older Android WebViews using Socket.IO Engine v3
+    allowEIO3: true,
+  })
+```
+
+---
+
+## Change A2b — `packages/server/src/index.ts`: add OPTIONS handler
+
+```
+Add this block immediately AFTER the new Server(...) block
+and BEFORE the io.on('connection', ...) call:
+
+  // Handle CORS preflight for polling transport.
+  // Before cross-origin polling requests (Vercel → Railway), the browser
+  // sends an OPTIONS preflight asking "is this allowed?".
+  // If not handled correctly the browser cancels the polling request entirely.
+  // Socket.IO's built-in CORS does not reliably cover this on all mobile
+  // browsers so we handle it explicitly.
+  app.options('*', (req, res) => {
+    res.setHeader(
+      'Access-Control-Allow-Origin',
+      process.env.CLIENT_URL || 'http://localhost:5173'
+    )
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    res.setHeader('Access-Control-Allow-Credentials', 'true')
+    res.sendStatus(204)
+  })
+```
