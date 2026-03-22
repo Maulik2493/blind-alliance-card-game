@@ -38,6 +38,8 @@ export interface ClientGameState {
 
   bidderTeamScore: number;
   oppositionTeamScore: number;
+  bidderTeamTotal: number;
+  oppositionTeamTotal: number | null;
   winner: 'bidder_team' | 'opposition_team' | null;
 }
 

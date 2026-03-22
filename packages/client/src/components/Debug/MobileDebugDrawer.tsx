@@ -30,8 +30,8 @@ export function MobileDebugDrawer() {
     teammateConditions,
     bids,
     highestBid,
-    bidderTeamScore,
-    oppositionTeamScore,
+    bidderTeamTotal,
+    oppositionTeamTotal,
     currentPlayerIndex,
   } = useGameStore();
 
@@ -107,9 +107,14 @@ export function MobileDebugDrawer() {
 
           {/* Scores */}
           <div className="flex items-center gap-1 shrink-0">
-            <span className="text-blue-500 font-semibold">B:{bidderTeamScore}</span>
+            <span className="text-blue-500 font-semibold">B:{bidderTeamTotal}</span>
             <span className="text-gray-300">|</span>
-            <span className="text-red-500 font-semibold">O:{oppositionTeamScore}</span>
+            <span className={oppositionTeamTotal !== null
+              ? 'text-red-500 font-semibold'
+              : 'text-gray-400 font-semibold'
+            }>
+              O:{oppositionTeamTotal !== null ? oppositionTeamTotal : '?'}
+            </span>
           </div>
         </div>
       </div>
@@ -161,8 +166,11 @@ export function MobileDebugDrawer() {
                   <span className="text-gray-600">Min Bid: {minBid}</span>
                 </div>
                 <div className="mt-2 text-sm text-gray-700">
-                  Bidder: <b>{bidderTeamScore}</b> pts &nbsp;|&nbsp;
-                  Opposition: <b>{oppositionTeamScore}</b> pts
+                  Bidder team: <b>{bidderTeamTotal}</b> pts &nbsp;|&nbsp;
+                  Opposition:{' '}
+                  <b className={oppositionTeamTotal !== null ? '' : 'text-gray-400'}>
+                    {oppositionTeamTotal !== null ? `${oppositionTeamTotal} pts` : 'pending...'}
+                  </b>
                 </div>
               </section>
 

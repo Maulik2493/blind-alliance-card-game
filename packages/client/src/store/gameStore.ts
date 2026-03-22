@@ -49,6 +49,8 @@ export interface ClientGameState {
   biddingQueue: string[];
   bidderTeamScore: number;
   oppositionTeamScore: number;
+  bidderTeamTotal: number;
+  oppositionTeamTotal: number | null;
   winner: 'bidder_team' | 'opposition_team' | null;
 }
 
@@ -88,6 +90,8 @@ interface GameStore {
   biddingQueue: string[];
   bidderTeamScore: number;
   oppositionTeamScore: number;
+  bidderTeamTotal: number;
+  oppositionTeamTotal: number | null;
   winner: 'bidder_team' | 'opposition_team' | null;
 
   // UI state
@@ -302,6 +306,8 @@ export const useGameStore = create<GameStore>((set, get) => {
     biddingQueue: [],
     bidderTeamScore: 0,
     oppositionTeamScore: 0,
+    bidderTeamTotal: 0,
+    oppositionTeamTotal: null,
     winner: null,
 
     // UI state

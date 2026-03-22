@@ -17,8 +17,8 @@ export function DebugPanel() {
   const highestBid = useGameStore((s) => s.highestBid);
   const deckCount = useGameStore((s) => s.deckCount);
   const minBid = useGameStore((s) => s.minBid);
-  const bidderTeamScore = useGameStore((s) => s.bidderTeamScore);
-  const oppositionTeamScore = useGameStore((s) => s.oppositionTeamScore);
+  const bidderTeamTotal = useGameStore((s) => s.bidderTeamTotal);
+  const oppositionTeamTotal = useGameStore((s) => s.oppositionTeamTotal);
   const currentTrick = useGameStore((s) => s.currentTrick);
   const removedCards = useGameStore((s) => s.removedCards);
   const teammateConditions = useGameStore((s) => s.teammateConditions);
@@ -43,7 +43,7 @@ export function DebugPanel() {
           <span className="text-gray-600">Min Bid: {minBid}</span>
         </div>
         <div className="mt-1 text-gray-600">
-          Bidder: {bidderTeamScore} | Opposition: {oppositionTeamScore}
+          Bidder: {bidderTeamTotal} | Opposition: {oppositionTeamTotal !== null ? oppositionTeamTotal : '?'}
         </div>
       </section>
 

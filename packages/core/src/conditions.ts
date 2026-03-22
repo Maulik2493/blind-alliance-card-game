@@ -52,7 +52,7 @@ export function checkCardPlayConditions(
     return condition;
   });
 
-  return resolveCollapses(updated);
+  return resolveCollapses(updated, bidderId);
 }
 
 // ─── First Trick Win Resolution ──────────────────────────────────────────────
@@ -73,13 +73,22 @@ export function resolveFirstTrickWin(
     }
   });
 
-  return resolveCollapses(updated);
+  return resolveCollapses(updated, bidderId);
 }
 
 // ─── Collapse Duplicates ─────────────────────────────────────────────────────
 
-export function resolveCollapses(conditions: TeammateCondition[]): TeammateCondition[] {
-  const seen = new Set<string>();
+/**
+ * A condition collapses when the player who satisfies it is already
+ * on the bidder's team — either the bidder themselves OR a previously
+ * revealed teammate.
+ */
+export function resolveCollapses(
+  conditions: TeammateCondition[],
+  bidderId: string,
+): TeammateCondition[] {
+  // Pre-seed with bidder — any condition satisfied by the bidder collapses
+  const seen = new Set<string>([bidderId]);
   return conditions.map((condition) => {
     if (!condition.satisfied || condition.collapsed || condition.satisfiedByPlayerId === null) {
       return condition;

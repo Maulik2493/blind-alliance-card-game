@@ -11,6 +11,13 @@ const SUIT_LABELS: Record<Suit, string> = {
   clubs: '♣',
 };
 
+const SUIT_COLORS: Record<Suit, string> = {
+  spades: '#1a1a1a',
+  hearts: '#ef4444',
+  diamonds: '#f97316',
+  clubs: '#059669',
+};
+
 const ALL_SUITS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
 
 interface ConditionSlot {
@@ -206,28 +213,33 @@ export function TeammateSelectScreen() {
 
               {slot.mode === 'card_reveal' && (
                 <div className="space-y-3 w-full overflow-hidden">
-                  {/* Suit */}
+                  {/* Suit — colored button group */}
                   <div className="w-full">
                     <label className="text-xs text-gray-500 mb-1 block">Suit</label>
-                    <select
-                      value={slot.suit ?? ''}
-                      onChange={(e) =>
-                        updateSlot(index, {
-                          suit: e.target.value as Suit,
-                          rank: undefined,
-                          instance: undefined,
-                        })
-                      }
-                      className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-base bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
-                      size={1}
-                    >
-                      <option value="" disabled>Select suit...</option>
+                    <div className="flex gap-2">
                       {ALL_SUITS.map((s) => (
-                        <option key={s} value={s}>
-                          {SUIT_LABELS[s]} {s}
-                        </option>
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() =>
+                            updateSlot(index, {
+                              suit: s,
+                              rank: undefined,
+                              instance: undefined,
+                            })
+                          }
+                          className={`flex-1 py-3 rounded-xl border-2 font-bold text-xl
+                                      transition-all active:scale-95 ${
+                            slot.suit === s
+                              ? 'border-current bg-opacity-10 scale-105 shadow-md'
+                              : 'border-gray-200 bg-white'
+                          }`}
+                          style={{ color: SUIT_COLORS[s] }}
+                        >
+                          {SUIT_LABELS[s]}
+                        </button>
                       ))}
-                    </select>
+                    </div>
                   </div>
 
                   {/* Rank */}

@@ -4069,3 +4069,321 @@ and BEFORE the io.on('connection', ...) call:
     res.sendStatus(204)
   })
 ```
+# PHASE 13 — Game Logic & UI Changes
+
+## Apply Order
+13.1 → 13.2 → 13.3
+
+---
+
+## Change 13.1 — Expand collapse condition to include confirmed teammates
+
+```
+Update packages/core/src/conditions.ts
+
+Currently collapse only triggers when the bidder themselves satisfies
+another condition. Expand this so collapse also triggers when a player
+who is already a confirmed teammate satisfies another condition.
+
+Collapse definition:
+  A condition collapses when the player who satisfies it is already
+  on the bidder's team — either the bidder themselves OR a previously
+  revealed teammate. No new teammate is added. The condition closes.
+
+Collapse timing:
+  Collapse is evaluated AFTER the trick resolves, not mid-trick.
+  Call resolveCollapses() inside the trick resolution flow,
+  after winnerId is assigned and points are distributed.
+
+── Update resolveCollapses() ────────────────────────────────────────────────
+
+  Current logic checks only:
+    if (condition.satisfiedByPlayerId === state.bidderId) → collapse
+
+  Replace with:
+
+    function isAlreadyOnBidderTeam(
+      playerId: string,
+      state: GameState
+    ): boolean {
+      // Bidder is always on their own team
+      if (playerId === state.bidderId) return true
+
+      // A player is on bidder's team if they have been revealed as
+      // teammate via a previously SATISFIED condition
+      return state.teammateConditions.some(
+        c => c.satisfied &&
+             !c.collapsed &&
+             c.satisfiedByPlayerId === playerId
+      )
+    }
+
+  In resolveCollapses(), replace the collapse check:
+
+    FROM:
+      if (condition.satisfiedByPlayerId === state.bidderId) {
+        condition.collapsed = true
+      }
+
+    TO:
+      if (isAlreadyOnBidderTeam(condition.satisfiedByPlayerId, state)) {
+        condition.collapsed = true
+      }
+
+── Update checkConditions() ─────────────────────────────────────────────────
+
+  checkConditions() is called during trick play to mark conditions as
+  satisfied. It must NOT assign team membership yet — that happens in
+  resolveCollapses() after the trick resolves.
+
+  The existing logic is fine here — no changes needed in checkConditions()
+  itself. The collapse expansion is entirely in resolveCollapses().
+
+── Invariant to preserve ─────────────────────────────────────────────────────
+
+  resolveCollapses() must always be called AFTER the trick resolves
+  (after winnerId is set and points distributed), never mid-trick.
+  This ensures collapse is evaluated against the final satisfied state
+  of ALL conditions for that trick, not a partial state.
+```
+
+---
+
+## Change 13.2 — Add suit colors to teammate condition dropdowns
+
+```
+Update packages/client/src/components/TeammateSelect/TeammateSelectScreen.tsx
+
+The suit dropdown currently shows plain text suit names with no color.
+Add color to suit symbols to match the rest of the app's suit styling.
+
+── Suit color helper ─────────────────────────────────────────────────────────
+
+  Add at the top of the component file:
+
+    const SUIT_SYMBOLS: Record<string, string> = {
+      spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣'
+    }
+
+    const SUIT_COLORS: Record<string, string> = {
+      spades:   '#1a1a1a',   // text-gray-900
+      hearts:   '#ef4444',   // text-red-500
+      diamonds: '#f97316',   // text-orange-500
+      clubs:    '#059669',   // text-emerald-700
+    }
+
+── Replace plain <select> for suit with a custom button group ────────────────
+
+  The native HTML <select> cannot render colored text per-option
+  reliably across all mobile browsers. Replace it with four
+  tap-friendly suit buttons that act as a single-select toggle:
+
+    <div>
+      <label className="text-xs text-gray-500 mb-1 block">Suit</label>
+      <div className="flex gap-2">
+        {(['spades', 'hearts', 'diamonds', 'clubs'] as Suit[]).map(suit => (
+          <button
+            key={suit}
+            type="button"
+            onClick={() => setSelectedSuit(suit)}
+            className={`flex-1 py-3 rounded-xl border-2 font-bold text-xl
+                        transition-all active:scale-95 ${
+              selectedSuit === suit
+                ? 'border-current bg-opacity-10 bg-current scale-105 shadow-md'
+                : 'border-gray-200 bg-white'
+            }`}
+            style={{ color: SUIT_COLORS[suit] }}
+          >
+            {SUIT_SYMBOLS[suit]}
+          </button>
+        ))}
+      </div>
+    </div>
+
+  This replaces the suit <select> entirely. The rank and instance
+  dropdowns remain as <select> elements — only the suit selector changes.
+
+── Ensure selectedSuit resets when condition slot mode changes ───────────────
+
+  When the user switches a condition slot from card_reveal to
+  first_trick_win and back, reset selectedSuit to null:
+
+    useEffect(() => {
+      setSelectedSuit(null)
+      setSelectedRank(null)
+      setSelectedInstance(null)
+    }, [mode])
+```
+
+---
+
+## Change 13.3 — Dynamic bidder and opposition team totals
+
+```
+Update packages/core/src/scoring.ts
+Update packages/client/src/components/GameTable/GameTableScreen.tsx
+Update packages/client/src/gameStore.ts
+
+── Part A: Core scoring functions ───────────────────────────────────────────
+
+Add these two pure functions to packages/core/src/scoring.ts:
+
+  function getBidderTeamTotal(state: GameState): number {
+    // Bidder's team = bidder + all players revealed as satisfied teammates
+    // (collapsed conditions do not add teammates)
+    // Retroactive: ALL tricks collected by a revealed teammate count,
+    // including tricks won before their condition was satisfied
+
+    const bidderTeamPlayerIds = new Set<string>()
+
+    // Bidder always counts from trick 1
+    if (state.bidderId) {
+      bidderTeamPlayerIds.add(state.bidderId)
+    }
+
+    // Add players revealed as teammates via satisfied (not collapsed) conditions
+    state.teammateConditions
+      .filter(c => c.satisfied && !c.collapsed && c.satisfiedByPlayerId)
+      .forEach(c => bidderTeamPlayerIds.add(c.satisfiedByPlayerId!))
+
+    // Sum ALL collected points for bidder team members
+    // including points from tricks won before their reveal
+    return state.players
+      .filter(p => bidderTeamPlayerIds.has(p.id))
+      .reduce((sum, p) => sum + p.collectedPoints, 0)
+  }
+
+  function getOppositionTeamTotal(state: GameState): number | null {
+    // Opposition total is only revealed after ALL conditions are resolved.
+    // A condition is resolved if it is satisfied OR collapsed.
+    // Returns null if conditions are still pending (UI shows '?' instead)
+
+    const allResolved = state.teammateConditions.every(
+      c => c.satisfied || c.collapsed
+    )
+
+    if (!allResolved) return null
+
+    // Opposition = everyone NOT on bidder's team
+    const bidderTeamPlayerIds = new Set<string>()
+    if (state.bidderId) bidderTeamPlayerIds.add(state.bidderId)
+    state.teammateConditions
+      .filter(c => c.satisfied && !c.collapsed && c.satisfiedByPlayerId)
+      .forEach(c => bidderTeamPlayerIds.add(c.satisfiedByPlayerId!))
+
+    return state.players
+      .filter(p => !bidderTeamPlayerIds.has(p.id))
+      .reduce((sum, p) => sum + p.collectedPoints, 0)
+  }
+
+  Export both functions from packages/core/src/index.ts
+
+── Part B: Add collectedPoints to Player ────────────────────────────────────
+
+  In packages/core/src/gameState.ts, ensure Player interface has:
+    collectedPoints: number   // initialized to 0 in initGame()
+
+  After each trick resolves, update collectedPoints for the trick winner:
+    winner.collectedPoints += trickPoints
+  (if this is not already tracked per-player, add it now)
+
+── Part C: Include totals in sanitized state ────────────────────────────────
+
+  In packages/server/src/GameRoom.ts, update getSanitizedStateFor():
+
+  Add to ClientGameState:
+    bidderTeamTotal: getBidderTeamTotal(this.state),
+    oppositionTeamTotal: getOppositionTeamTotal(this.state),
+    // oppositionTeamTotal is null until all conditions resolved
+
+── Part D: Update gameStore.ts ──────────────────────────────────────────────
+
+  Add to store interface:
+    bidderTeamTotal: number
+    oppositionTeamTotal: number | null
+
+  Add to initial state:
+    bidderTeamTotal: 0,
+    oppositionTeamTotal: null,
+
+  These are included in state_update so no additional socket listener needed
+  — they arrive automatically with every broadcastStateUpdate.
+
+── Part E: Update score bar in GameTableScreen.tsx ──────────────────────────
+
+  Replace the static score display with dynamic values from the store:
+
+    const bidderTeamTotal = useGameStore(s => s.bidderTeamTotal)
+    const oppositionTeamTotal = useGameStore(s => s.oppositionTeamTotal)
+    const highestBid = useGameStore(s => s.highestBid)
+
+  Score bar JSX:
+
+    <div className="shrink-0 px-3 py-2 bg-white border-t border-gray-200
+                    flex justify-between text-xs md:text-sm">
+
+      {/* Bidder team — always visible from trick 1 */}
+      <span className="text-gray-600">
+        Bidder:{' '}
+        <b className="text-amber-600">{bidderTeamTotal}</b>
+        /{highestBid?.amount ?? '—'}
+      </span>
+
+      {/* Opposition — shows '?' until all conditions resolved */}
+      <span className="text-gray-600">
+        Opposition:{' '}
+        <b className={
+          oppositionTeamTotal !== null ? 'text-red-500' : 'text-gray-400'
+        }>
+          {oppositionTeamTotal !== null ? oppositionTeamTotal : '?'}
+        </b>
+      </span>
+
+    </div>
+
+── Part F: Update MobileDebugDrawer.tsx score display ───────────────────────
+
+  In the collapsed bar row 2 and in the expanded drawer Game Info section,
+  replace hardcoded bidderTeamScore/oppositionTeamScore with:
+
+    const bidderTeamTotal = useGameStore(s => s.bidderTeamTotal)
+    const oppositionTeamTotal = useGameStore(s => s.oppositionTeamTotal)
+
+  Collapsed bar:
+    <span className="text-blue-500 font-semibold">
+      B:{bidderTeamTotal}
+    </span>
+    <span className="text-gray-300">|</span>
+    <span className={oppositionTeamTotal !== null
+      ? 'text-red-500 font-semibold'
+      : 'text-gray-400 font-semibold'
+    }>
+      O:{oppositionTeamTotal !== null ? oppositionTeamTotal : '?'}
+    </span>
+
+  Expanded drawer Game Info section:
+    <div className="mt-2 text-sm text-gray-700">
+      Bidder team: <b>{bidderTeamTotal}</b> pts
+      &nbsp;|&nbsp;
+      Opposition:{' '}
+      <b className={oppositionTeamTotal !== null ? '' : 'text-gray-400'}>
+        {oppositionTeamTotal !== null ? `${oppositionTeamTotal} pts` : 'pending...'}
+      </b>
+    </div>
+
+── Invariants to preserve ───────────────────────────────────────────────────
+
+  1. getBidderTeamTotal() and getOppositionTeamTotal() are pure functions —
+     no side effects, computed fresh on every state update
+
+  2. Collapsed conditions do NOT add players to either team —
+     the collapsed player was already on bidder's team before collapsing
+     so their points are already counted via their earlier revealed condition
+
+  3. oppositionTeamTotal returns null (not 0) while conditions are pending —
+     null means unknown, 0 means known to be zero, these are different states
+
+  4. Retroactive counting is automatic — getBidderTeamTotal() sums
+     ALL of a player's collectedPoints regardless of when they were revealed,
+     so no special retroactive logic is needed beyond correct point tracking
+```

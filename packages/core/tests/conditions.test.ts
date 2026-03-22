@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   checkCardPlayConditions,
   resolveFirstTrickWin,
+  resolveCollapses,
 } from '@blind-alliance/core';
 import type { TeammateCondition, CardRevealCondition, FirstTrickWinCondition } from '@blind-alliance/core';
 import type { Card } from '@blind-alliance/core';
@@ -252,5 +253,55 @@ describe('instance tracking ignores deckIndex', () => {
     );
     expect(after2[1]!.collapsed).toBe(true);
     expect(after2[1]!.satisfied).toBe(false);
+  });
+});
+
+// ─── resolveCollapses: expanded collapse for confirmed teammates ─────────────
+
+describe('resolveCollapses — confirmed teammate collapse', () => {
+  it('condition satisfied by a player already on bidder team → collapses', () => {
+    // p2 already satisfied condition 0, so they're on bidder's team
+    // Now condition 1 is also satisfied by p2 → should collapse
+    const conditions: TeammateCondition[] = [
+      { ...cardReveal('hearts', 'A'), satisfied: true, satisfiedByPlayerId: 'p2' },
+      { ...cardReveal('diamonds', 'K'), satisfied: true, satisfiedByPlayerId: 'p2' },
+    ];
+    const result = resolveCollapses(conditions, 'p1');
+    expect(result[0]!.satisfied).toBe(true);
+    expect(result[0]!.collapsed).toBe(false);
+    expect(result[1]!.collapsed).toBe(true);
+  });
+
+  it('bidder ID in seen set causes collapse if bidder somehow satisfies a condition', () => {
+    // Edge case: if somehow the bidder ends up as satisfiedByPlayerId
+    const conditions: TeammateCondition[] = [
+      { ...cardReveal('hearts', 'A'), satisfied: true, satisfiedByPlayerId: 'p1' },
+    ];
+    const result = resolveCollapses(conditions, 'p1');
+    expect(result[0]!.collapsed).toBe(true);
+    expect(result[0]!.satisfied).toBe(false);
+  });
+
+  it('first trick win + card reveal both satisfied by same player → second collapses', () => {
+    const conditions: TeammateCondition[] = [
+      { ...firstTrickWin(), satisfied: true, satisfiedByPlayerId: 'p2' },
+      { ...cardReveal('spades', 'A'), satisfied: true, satisfiedByPlayerId: 'p2' },
+    ];
+    const result = resolveCollapses(conditions, 'p1');
+    expect(result[0]!.satisfied).toBe(true);
+    expect(result[0]!.collapsed).toBe(false);
+    expect(result[1]!.collapsed).toBe(true);
+  });
+
+  it('two different players satisfying conditions → no collapse', () => {
+    const conditions: TeammateCondition[] = [
+      { ...cardReveal('hearts', 'A'), satisfied: true, satisfiedByPlayerId: 'p2' },
+      { ...cardReveal('diamonds', 'K'), satisfied: true, satisfiedByPlayerId: 'p3' },
+    ];
+    const result = resolveCollapses(conditions, 'p1');
+    expect(result[0]!.satisfied).toBe(true);
+    expect(result[0]!.collapsed).toBe(false);
+    expect(result[1]!.satisfied).toBe(true);
+    expect(result[1]!.collapsed).toBe(false);
   });
 });

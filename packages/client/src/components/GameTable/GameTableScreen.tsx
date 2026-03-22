@@ -23,8 +23,8 @@ export function GameTableScreen() {
   const currentTrick = useGameStore((s) => s.currentTrick);
   const highestBid = useGameStore((s) => s.highestBid);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
-  const bidderTeamScore = useGameStore((s) => s.bidderTeamScore);
-  const oppositionTeamScore = useGameStore((s) => s.oppositionTeamScore);
+  const bidderTeamTotal = useGameStore((s) => s.bidderTeamTotal);
+  const oppositionTeamTotal = useGameStore((s) => s.oppositionTeamTotal);
   const isMyTurn = useGameStore((s) => s.isMyTurn)();
 
   const current = currentPlayer();
@@ -72,11 +72,14 @@ export function GameTableScreen() {
       {/* Score bar — compact on mobile */}
       <div className="shrink-0 px-3 py-2 bg-white border-t border-gray-200 flex justify-between text-xs md:text-sm">
         <span className="text-gray-600">
-          Bidder: <b className="text-amber-600">{bidderTeamScore}</b>
-          /{highestBid?.amount}
+          Bidder: <b className="text-amber-600">{bidderTeamTotal}</b>
+          /{highestBid?.amount ?? '—'}
         </span>
         <span className="text-gray-600">
-          Opposition: <b>{oppositionTeamScore}</b>
+          Opposition:{' '}
+          <b className={oppositionTeamTotal !== null ? 'text-red-500' : 'text-gray-400'}>
+            {oppositionTeamTotal !== null ? oppositionTeamTotal : '?'}
+          </b>
         </span>
       </div>
 

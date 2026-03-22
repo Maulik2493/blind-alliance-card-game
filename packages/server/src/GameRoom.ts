@@ -10,6 +10,8 @@ import {
   setTeammateConditions,
   playCard,
   getValidCards,
+  getBidderTeamTotal,
+  getOppositionTeamTotal,
 } from '@blind-alliance/core';
 import type { PublicPlayer, ClientGameState } from './events';
 
@@ -163,6 +165,8 @@ export class GameRoom {
       biddingQueue: this.state.biddingQueue,
       bidderTeamScore: this.state.bidderTeamScore,
       oppositionTeamScore: this.state.oppositionTeamScore,
+      bidderTeamTotal: getBidderTeamTotal(this.state),
+      oppositionTeamTotal: getOppositionTeamTotal(this.state),
       winner: this.state.winner,
     };
   }
