@@ -12,6 +12,7 @@ import {
   getValidCards,
   getBidderTeamTotal,
   getOppositionTeamTotal,
+  resetForRematch,
 } from '@blind-alliance/core';
 import type { PublicPlayer, ClientGameState } from './events';
 
@@ -29,6 +30,10 @@ export class GameRoom {
     reconnectTimer: ReturnType<typeof setTimeout> | null;
   }> = new Map();
   RECONNECT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
+  // Auto-cleanup timer for finished rooms awaiting rematch
+  finishedCleanupTimer: ReturnType<typeof setTimeout> | null = null;
+  static FINISHED_CLEANUP_MS = 10 * 60 * 1000; // 10 minutes
 
   /** Reverse lookup: given a socket ID, find the game's player ID */
   getPlayerIdForSocket(socketId: string): string {
@@ -181,6 +186,21 @@ export class GameRoom {
       collectedPoints: p.collectedCards.reduce((sum, c) => sum + c.points, 0),
       isConnected: p.isConnected,
     }));
+  }
+
+  applyRematch(playerId: string): void {
+    if (playerId !== this.hostId) {
+      throw new Error('Only the host can start a rematch');
+    }
+    if (this.state.phase !== 'finished') {
+      throw new Error('Rematch can only be triggered after game ends');
+    }
+    // Cancel the auto-cleanup timer since we're reusing the room
+    if (this.finishedCleanupTimer) {
+      clearTimeout(this.finishedCleanupTimer);
+      this.finishedCleanupTimer = null;
+    }
+    this.state = resetForRematch(this.state);
   }
 
   markPlayerDisconnected(playerId: string): void {

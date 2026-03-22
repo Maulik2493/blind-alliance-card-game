@@ -4387,3 +4387,221 @@ Add these two pure functions to packages/core/src/scoring.ts:
      ALL of a player's collectedPoints regardless of when they were revealed,
      so no special retroactive logic is needed beyond correct point tracking
 ```
+# PHASE 14 — Rematch / Play Again
+
+## Flow
+1. Game ends → Results screen shown to all players
+2. Host clicks "Play Again" button on Results screen
+3. Server resets room state back to lobby, same room code
+4. ALL players are automatically taken back to the lobby screen
+5. New players can join using the same room code as before
+6. Host clicks "Start Game" when ready — same as a fresh game
+
+---
+
+## Apply Order
+14.1 → 14.2 → 14.3 → 14.4
+
+---
+
+## Change 14.1 — Core: add resetForRematch() to gameState.ts
+
+```
+Update packages/core/src/gameState.ts
+
+Add a pure function that resets game state back to lobby while
+preserving the player list, seating order, and room metadata.
+
+  export function resetForRematch(state: GameState): GameState {
+    // Reset all per-player game state but keep name, id, and connection status
+    const resetPlayers = state.players.map(p => ({
+      ...p,
+      hand: [],
+      collectedPoints: 0,
+      collectedCards: [],
+      team: null,
+    }))
+
+    return {
+      // Preserve room metadata
+      roomId: state.roomId,
+      hostId: state.hostId,
+      deckCount: state.deckCount,
+
+      // Reset everything else back to initial lobby state
+      phase: 'lobby',
+      players: resetPlayers,
+      deck: [],
+      biddingQueue: [],
+      bids: [],
+      highestBid: null,
+      bidderId: null,
+      trumpSuit: null,
+      teammateConditions: [],
+      maxTeammateCount: 0,
+      currentTrick: null,
+      completedTricks: [],
+      cardInstanceTracker: {},
+      removedCards: [],
+      minBid: state.deckCount === 1 ? 125 : 250,
+    }
+  }
+
+Export resetForRematch from packages/core/src/index.ts
+```
+
+---
+
+## Change 14.2 — Server: handle rematch event
+
+```
+Update packages/server/src/GameRoom.ts
+
+── Add applyRematch() to GameRoom ───────────────────────────────────────────
+
+  applyRematch(playerId: string): void {
+    // Only host can trigger rematch
+    if (playerId !== this.state.hostId) {
+      throw new Error('Only the host can start a rematch')
+    }
+    // Only valid from finished phase
+    if (this.state.phase !== 'finished') {
+      throw new Error('Rematch can only be triggered after game ends')
+    }
+    // Reset state to lobby, preserving players and room code
+    this.state = resetForRematch(this.state)
+  }
+
+── Create packages/server/src/events/onRematch.ts ───────────────────────────
+
+  import { Socket, Server } from 'socket.io'
+  import { RoomManager } from '../RoomManager'
+  import { broadcastStateUpdate } from '../GameRoom'
+
+  export function handleRematch(
+    socket: Socket,
+    io: Server,
+    roomManager: RoomManager
+  ): void {
+    const room = roomManager.getRoomByPlayerId(socket.id)
+    if (!room) {
+      socket.emit('action_error', { message: 'Room not found' })
+      return
+    }
+
+    try {
+      room.applyRematch(socket.id)
+
+      // Broadcast updated lobby state to ALL players in the room.
+      // Clients listening to state_update will see phase = 'lobby'
+      // and automatically navigate back to the lobby screen.
+      broadcastStateUpdate(io, room)
+
+    } catch (err: any) {
+      socket.emit('action_error', { message: err.message })
+    }
+  }
+
+── Register event in packages/server/src/index.ts ───────────────────────────
+
+  Add inside io.on('connection', (socket) => { ... }):
+
+    socket.on('rematch', () => {
+      handleRematch(socket, io, roomManager)
+    })
+```
+
+---
+
+## Change 14.3 — Client: emit rematch and handle lobby navigation
+
+```
+── Update packages/client/src/gameStore.ts ──────────────────────────────────
+
+Add rematch action to store:
+
+  requestRematch: () => {
+    socket.emit('rematch')
+  }
+
+No additional socket listener needed — when the server resets state
+to lobby and calls broadcastStateUpdate, the existing state_update
+listener will update phase to 'lobby' automatically, which causes
+App.tsx to render LobbyScreen for all players.
+
+── Update packages/client/src/gameStore.ts state_update handler ─────────────
+
+When phase changes to 'lobby' via a state_update (rematch scenario),
+ensure these fields are also reset on the client:
+
+  socket.on('state_update', (newState: ClientGameState) => {
+    set({
+      ...newState,
+      // Reset transient UI state when returning to lobby
+      ...(newState.phase === 'lobby' && {
+        gameStartInfo: null,
+        showGameStartBanner: false,
+        isReconnecting: false,
+        disconnectedPlayers: [],
+      })
+    })
+  })
+```
+
+---
+
+## Change 14.4 — ResultsScreen: add Play Again button for host
+
+```
+Update packages/client/src/components/Results/ResultsScreen.tsx
+
+── Add Play Again button ────────────────────────────────────────────────────
+
+  const myPlayerId = useGameStore(s => s.myPlayerId)
+  const hostId = useGameStore(s => s.hostId)
+  const requestRematch = useGameStore(s => s.requestRematch)
+
+  const isHost = myPlayerId === hostId
+
+Render at the bottom of the results screen:
+
+  <div className="mt-6 space-y-3">
+
+    { isHost ? (
+      // Host sees the Play Again button
+      <button
+        onClick={requestRematch}
+        className="w-full py-4 text-base font-bold text-white
+                   bg-amber-500 hover:bg-amber-600 rounded-xl
+                   transition-colors active:scale-95"
+      >
+        ↩ Play Again (same room)
+      </button>
+    ) : (
+      // Non-host players see a waiting message
+      <div className="text-center py-4 text-gray-500 text-sm">
+        Waiting for host to start a new game...
+      </div>
+    )}
+
+    {/* Room code reminder so new players can join */}
+    <div className="text-center">
+      <p className="text-xs text-gray-400 mb-1">Room code</p>
+      <p className="text-xl font-bold tracking-widest text-amber-600">
+        {roomId}
+      </p>
+      <p className="text-xs text-gray-400 mt-1">
+        New players can join with this code
+      </p>
+    </div>
+
+  </div>
+
+── Add roomId to store if not already present ───────────────────────────────
+
+  Ensure roomId is in the store interface and populated from state_update:
+    roomId: string | null
+
+  If it is not already tracked, add it to the store interface,
+  initial state (null), and spread it in the state_update handler.
+```

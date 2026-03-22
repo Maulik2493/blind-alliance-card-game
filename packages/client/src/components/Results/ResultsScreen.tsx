@@ -8,6 +8,10 @@ export function ResultsScreen() {
   const players = useGameStore((s) => s.players);
   const myPlayerId = useGameStore((s) => s.myPlayerId);
   const bidderId = useGameStore((s) => s.bidderId);
+  const roomId = useGameStore((s) => s.roomId);
+  const requestRematch = useGameStore((s) => s.requestRematch);
+
+  const isHost = players.length > 0 && players[0]?.id === myPlayerId;
 
   const bidderTeam = players.filter((p) => p.team === 'bidder');
   const oppositionTeam = players.filter((p) => p.team === 'opposition');
@@ -100,13 +104,31 @@ export function ResultsScreen() {
         </div>
 
         {/* Play Again */}
-        <div className="text-center">
-          <button
-            onClick={() => window.location.reload()}
-            className="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-8 py-3 rounded-lg transition-colors cursor-pointer text-lg"
-          >
-            Play Again
-          </button>
+        <div className="mt-6 space-y-3">
+          {isHost ? (
+            <button
+              onClick={requestRematch}
+              className="w-full py-4 text-base font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-colors active:scale-95 cursor-pointer"
+            >
+              ↩ Play Again (same room)
+            </button>
+          ) : (
+            <div className="text-center py-4 text-gray-500 text-sm">
+              Waiting for host to start a new game...
+            </div>
+          )}
+
+          {roomId && (
+            <div className="text-center">
+              <p className="text-xs text-gray-400 mb-1">Room code</p>
+              <p className="text-xl font-bold tracking-widest text-amber-600">
+                {roomId}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                New players can join with this code
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

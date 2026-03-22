@@ -456,6 +456,43 @@ export function computeFinalScores(state: GameState): GameState {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+export function resetForRematch(state: GameState): GameState {
+  const deckCount = state.deckCount;
+  return {
+    phase: 'lobby',
+    players: state.players.map((p) => ({
+      ...p,
+      hand: [],
+      collectedCards: [],
+      team: 'unknown' as const,
+      isRevealed: false,
+    })),
+    deckCount,
+    totalPoints: deckCount === 1 ? 250 : 500,
+    minBid: getMinBid(deckCount),
+    removedCards: [],
+
+    bids: [],
+    highestBid: null,
+    bidderId: null,
+    biddingQueue: [],
+
+    trumpSuit: null,
+    teammateConditions: [],
+    maxTeammateCount: getMaxTeammateCount(state.players.length),
+
+    cardInstanceTracker: new Map(),
+
+    tricks: [],
+    currentTrick: null,
+    currentPlayerIndex: 0,
+
+    bidderTeamScore: 0,
+    oppositionTeamScore: 0,
+    winner: null,
+  };
+}
+
 function updateTeamAssignments(
   players: Player[],
   conditions: TeammateCondition[],

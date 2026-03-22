@@ -3,6 +3,7 @@ import { buildScoreSummary } from '@blind-alliance/core';
 import type { ClientToServerEvents, ServerToClientEvents } from '../events';
 import { roomManager } from '../RoomManager';
 import { broadcastStateUpdate } from './broadcastStateUpdate';
+import { GameRoom } from '../GameRoom';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
@@ -33,7 +34,12 @@ export function handlePlayCard(
         }
       }
 
-      roomManager.destroyRoom(room.roomId);
+      // Room kept alive for rematch. Auto-destroy after 10 min if no rematch.
+      room.finishedCleanupTimer = setTimeout(() => {
+        if (room.state.phase === 'finished') {
+          roomManager.destroyRoom(room.roomId);
+        }
+      }, GameRoom.FINISHED_CLEANUP_MS);
     } else {
       broadcastStateUpdate(io, room);
     }

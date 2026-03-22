@@ -4,6 +4,7 @@ import {
   selectTrump,
   addPlayerToLobby,
   initGame,
+  resetForRematch,
   MAX_PLAYERS,
   MIN_PLAYERS,
 } from '../src/gameState';
@@ -177,5 +178,57 @@ describe('player limits', () => {
       state = addPlayerToLobby(state, `p${i}`, `Player${i}`);
     }
     expect(state.maxTeammateCount).toBe(4);
+  });
+});
+
+describe('resetForRematch', () => {
+  it('resets phase to lobby and preserves players', () => {
+    const state = makeMinimalState({
+      phase: 'finished',
+      bidderId: 'p3',
+      trumpSuit: 'hearts',
+      winner: 'bidder_team',
+      bidderTeamScore: 150,
+      oppositionTeamScore: 100,
+    });
+    const result = resetForRematch(state);
+    expect(result.phase).toBe('lobby');
+    expect(result.players).toHaveLength(4);
+    expect(result.players[0]!.name).toBe('Alice');
+    expect(result.players[1]!.name).toBe('Bob');
+  });
+
+  it('clears all game state fields', () => {
+    const state = makeMinimalState({
+      phase: 'finished',
+      bidderId: 'p3',
+      trumpSuit: 'hearts',
+      winner: 'bidder_team',
+      bidderTeamScore: 150,
+      oppositionTeamScore: 100,
+    });
+    const result = resetForRematch(state);
+    expect(result.bidderId).toBeNull();
+    expect(result.trumpSuit).toBeNull();
+    expect(result.winner).toBeNull();
+    expect(result.bidderTeamScore).toBe(0);
+    expect(result.oppositionTeamScore).toBe(0);
+    expect(result.bids).toHaveLength(0);
+    expect(result.tricks).toHaveLength(0);
+    expect(result.currentTrick).toBeNull();
+    expect(result.teammateConditions).toHaveLength(0);
+    expect(result.biddingQueue).toHaveLength(0);
+  });
+
+  it('resets player hands and teams but keeps id/name', () => {
+    const state = makeMinimalState({ phase: 'finished' });
+    const result = resetForRematch(state);
+    for (const player of result.players) {
+      expect(player.hand).toHaveLength(0);
+      expect(player.collectedCards).toHaveLength(0);
+      expect(player.team).toBe('unknown');
+      expect(player.isRevealed).toBe(false);
+    }
+    expect(result.players.map((p) => p.id)).toEqual(['p1', 'p2', 'p3', 'p4']);
   });
 });

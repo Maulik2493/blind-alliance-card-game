@@ -10,6 +10,7 @@ import { handleSelectTrump } from './events/onTrumpSelect';
 import { handleSetConditions } from './events/onSetConditions';
 import { handlePlayCard } from './events/onPlayCard';
 import { handleDisconnect } from './events/onDisconnect';
+import { handleRematch } from './events/onRematch';
 import { roomManager } from './RoomManager';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
@@ -85,6 +86,7 @@ io.on('connection', (socket) => {
   socket.on('select_trump', (data) => handleSelectTrump(socket, io, data));
   socket.on('set_conditions', (data) => handleSetConditions(socket, io, data));
   socket.on('play_card', (data) => handlePlayCard(socket, io, data));
+  socket.on('rematch', () => handleRematch(socket, io));
   socket.on('disconnect', () => handleDisconnect(socket, io));
 });
 

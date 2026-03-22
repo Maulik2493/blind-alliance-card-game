@@ -68,6 +68,7 @@ export interface ClientToServerEvents {
   select_trump: (data: { suit: Suit }) => void;
   set_conditions: (data: { conditions: TeammateCondition[] }) => void;
   play_card: (data: { cardId: string }) => void;
+  rematch: () => void;
 }
 
 // ─── Server → Client Events ─────────────────────────────────────────────────

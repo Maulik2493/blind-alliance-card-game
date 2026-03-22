@@ -115,6 +115,7 @@ interface GameStore {
   clearError: () => void;
   clearLog: () => void;
   dismissGameStartBanner: () => void;
+  requestRematch: () => void;
 
   // Selectors
   currentPlayer: () => PublicPlayer | undefined;
@@ -198,7 +199,18 @@ export const useGameStore = create<GameStore>((set, get) => {
 
   socket.on('state_update', ({ state }) => {
     const prevPhase = get().phase;
-    set({ ...state, myHand: sortHand(state.myHand) });
+    set({
+      ...state,
+      myHand: sortHand(state.myHand),
+      // Reset transient UI state when returning to lobby (rematch)
+      ...(state.phase === 'lobby' ? {
+        gameStartInfo: null,
+        showGameStartBanner: false,
+        isReconnecting: false,
+        disconnectedPlayers: [],
+        lastError: null,
+      } : {}),
+    });
     // Temporary debug: log phase transitions involving 'playing'
     if (prevPhase !== state.phase || state.phase === 'playing') {
       const currentP = state.players[state.currentPlayerIndex];
@@ -358,6 +370,10 @@ export const useGameStore = create<GameStore>((set, get) => {
     clearLog: () => set({ gameLog: [] }),
 
     dismissGameStartBanner: () => set({ showGameStartBanner: false }),
+
+    requestRematch: () => {
+      socket.emit('rematch');
+    },
 
     // ── Selectors ────────────────────────────────────────────────────────
 
