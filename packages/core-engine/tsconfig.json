@@ -11,12 +11,8 @@
     "sourceMap": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "composite": true,
-    "paths": {
-      "@blind-alliance/core-engine": ["../core-engine/src/index.ts"]
-    }
+    "composite": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "tests"],
-  "references": [{ "path": "../core-engine" }]
+  "exclude": ["node_modules", "dist"]
 }

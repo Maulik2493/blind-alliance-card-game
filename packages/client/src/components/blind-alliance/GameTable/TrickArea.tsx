@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { useGameStore } from '../../store/gameStore';
-import { CardComponent } from '../shared/CardComponent';
+import { useGameStore } from '../../../store/gameStore';
+import { CardComponent } from '../../shared/CardComponent';
 import type { TrickPlay } from '@blind-alliance/core';
 
 export function TrickArea() {

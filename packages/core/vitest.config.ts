@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@blind-alliance/core': path.resolve(__dirname, 'src/index.ts'),
+      '@blind-alliance/core-engine': path.resolve(__dirname, '../core-engine/src/index.ts'),
     },
   },
   test: {

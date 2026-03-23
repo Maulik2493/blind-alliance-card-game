@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useGameStore } from '../../store/gameStore';
-import { PlayerHand } from '../GameTable/PlayerHand';
+import { useGameStore } from '../../../store/gameStore';
+import { PlayerHand } from '../../shared/PlayerHand';
 import { nextValidBid, getMaxBid } from '@blind-alliance/core';
 
 export function BiddingScreen() {

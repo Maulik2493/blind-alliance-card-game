@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { useGameStore } from '../../store/gameStore';
-import type { PublicPlayer } from '../../store/gameStore';
+import { useGameStore } from '../../../store/gameStore';
+import type { PublicPlayer } from '../../../store/gameStore';
 
 export function TeammateRevealToast() {
   const players = useGameStore((s) => s.players);

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useGameStore } from '../../store/gameStore';
-import { CardComponent } from '../shared/CardComponent';
+import { CardComponent } from './CardComponent';
 
 export function PlayerHand({ disabled: forceDisabled }: { disabled?: boolean }) {
   const myHand = useGameStore((s) => s.myHand);

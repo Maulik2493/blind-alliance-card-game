@@ -17,6 +17,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "paths": {
+      "@blind-alliance/core-engine": ["../core-engine/src/index.ts"],
       "@blind-alliance/core": ["../core/src/index.ts"]
     }
   },

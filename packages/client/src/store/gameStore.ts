@@ -1,33 +1,23 @@
 import { create } from 'zustand';
-import type { Card, Suit, GamePhase, Bid, Trick, TrickPlay, TeammateCondition } from '@blind-alliance/core';
-import type { AvailableConditionCard } from '@blind-alliance/core';
+import type { Card, Suit, GamePhase, Bid, Trick, TeammateCondition } from '@blind-alliance/core';
 import { getValidCards, getAvailableConditionCards, buildDeck, sortHand } from '@blind-alliance/core';
 import { socket, connectSocket } from '../socket';
 
-// ─── Types (mirrored from server/src/events.ts) ─────────────────────────────
+// ─── Re-export types from sub-stores for backward compatibility ──────────────
+// Components that import from gameStore continue to work unchanged.
 
-export interface GameStartInfo {
-  trumpSuit: Suit;
-  bidderName: string;
-  bidAmount: number;
-  teammateCount: number;
-  conditions: {
-    type: 'card_reveal' | 'first_trick_win';
-    suit: Suit | null;
-    rank: string | null;
-    instance: number | null;
-  }[];
-}
+export type { PublicPlayer, GameLogEntry, SharedState, SharedActions } from './sharedStore';
+export { initialSharedState } from './sharedStore';
 
-export interface PublicPlayer {
-  id: string;
-  name: string;
-  team: 'bidder' | 'opposition' | 'unknown';
-  isRevealed: boolean;
-  cardCount: number;
-  collectedPoints: number;
-  isConnected: boolean;
-}
+export type { GameStartInfo, BlindAllianceState, BlindAllianceActions } from './blindAllianceStore';
+export { initialBlindAllianceState } from './blindAllianceStore';
+
+import type { PublicPlayer, GameLogEntry, SharedState, SharedActions } from './sharedStore';
+import { initialSharedState } from './sharedStore';
+import type { GameStartInfo, BlindAllianceState, BlindAllianceActions } from './blindAllianceStore';
+import { initialBlindAllianceState } from './blindAllianceStore';
+
+// ─── Client Game State (sanitized view from server) ─────────────────────────
 
 export interface ClientGameState {
   phase: GamePhase;
@@ -54,77 +44,10 @@ export interface ClientGameState {
   winner: 'bidder_team' | 'opposition_team' | null;
 }
 
-// ─── Game Log Entry ──────────────────────────────────────────────────────────
+// ─── Combined Store Interface ────────────────────────────────────────────────
+// Single store combining shared + Blind Alliance state and actions.
 
-export interface GameLogEntry {
-  id: number;
-  timestamp: string;
-  message: string;
-}
-
-// ─── Store Interface ─────────────────────────────────────────────────────────
-
-interface GameStore {
-  // Identity
-  myPlayerId: string | null;
-  myPlayerName: string | null;
-  roomId: string | null;
-
-  // Server-driven game state
-  phase: GamePhase;
-  players: PublicPlayer[];
-  myHand: Card[];
-  deckCount: 1 | 2;
-  totalPoints: number;
-  minBid: number;
-  removedCards: Card[];
-  bids: Bid[];
-  highestBid: Bid | null;
-  bidderId: string | null;
-  trumpSuit: Suit | null;
-  teammateConditions: TeammateCondition[];
-  maxTeammateCount: number;
-  tricks: Trick[];
-  currentTrick: Trick | null;
-  currentPlayerIndex: number;
-  biddingQueue: string[];
-  bidderTeamScore: number;
-  oppositionTeamScore: number;
-  bidderTeamTotal: number;
-  oppositionTeamTotal: number | null;
-  winner: 'bidder_team' | 'opposition_team' | null;
-
-  // UI state
-  lastError: string | null;
-  gameLog: GameLogEntry[];
-  isConnected: boolean;
-  isReconnecting: boolean;
-  reconnectAttempt: number;
-  disconnectedPlayers: { playerId: string; playerName: string }[];
-  gameStartInfo: GameStartInfo | null;
-  showGameStartBanner: boolean;
-
-  // Actions
-  connect: (playerName: string, roomId?: string) => void;
-  startGame: () => void;
-  placeBid: (amount: number) => void;
-  passBid: () => void;
-  selectTrump: (suit: Suit) => void;
-  setTeammateConditions: (conditions: TeammateCondition[]) => void;
-  playCard: (card: Card) => void;
-  clearError: () => void;
-  clearLog: () => void;
-  dismissGameStartBanner: () => void;
-  requestRematch: () => void;
-
-  // Selectors
-  currentPlayer: () => PublicPlayer | undefined;
-  validCards: () => Card[];
-  isMyTurn: () => boolean;
-  availableConditionCards: () => AvailableConditionCard[];
-  currentTrickPlays: () => TrickPlay[];
-  amIBidder: () => boolean;
-}
+type GameStore = SharedState & BlindAllianceState & SharedActions & BlindAllianceActions;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -293,44 +216,11 @@ export const useGameStore = create<GameStore>((set, get) => {
   // ── Initial State + Actions ──────────────────────────────────────────────
 
   return {
-    // Identity
-    myPlayerId: null,
-    myPlayerName: null,
-    roomId: null,
+    // Shared state (connection, identity, players, error, log)
+    ...initialSharedState,
 
-    // Server-driven game state
-    phase: 'lobby' as GamePhase,
-    players: [],
-    myHand: [],
-    deckCount: 1 as 1 | 2,
-    totalPoints: 250,
-    minBid: 125,
-    removedCards: [],
-    bids: [],
-    highestBid: null,
-    bidderId: null,
-    trumpSuit: null,
-    teammateConditions: [],
-    maxTeammateCount: 0,
-    tricks: [],
-    currentTrick: null,
-    currentPlayerIndex: 0,
-    biddingQueue: [],
-    bidderTeamScore: 0,
-    oppositionTeamScore: 0,
-    bidderTeamTotal: 0,
-    oppositionTeamTotal: null,
-    winner: null,
-
-    // UI state
-    lastError: null,
-    gameLog: [],
-    isConnected: false,
-    isReconnecting: false,
-    reconnectAttempt: 0,
-    disconnectedPlayers: [],
-    gameStartInfo: null,
-    showGameStartBanner: false,
+    // Blind Alliance game state
+    ...initialBlindAllianceState,
 
     // ── Actions ──────────────────────────────────────────────────────────
 

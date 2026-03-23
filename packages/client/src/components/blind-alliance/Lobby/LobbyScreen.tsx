@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useGameStore } from '../../store/gameStore';
+import { useGameStore } from '../../../store/gameStore';
 
 export function LobbyScreen() {
   const myPlayerId = useGameStore((s) => s.myPlayerId);

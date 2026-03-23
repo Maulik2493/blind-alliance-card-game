@@ -1,13 +1,13 @@
 import { useGameStore } from './store/gameStore';
-import { LobbyScreen } from './components/Lobby/LobbyScreen';
-import { BiddingScreen } from './components/Bidding/BiddingScreen';
-import { TrumpSelectScreen } from './components/TrumpSelect/TrumpSelectScreen';
-import { TeammateSelectScreen } from './components/TeammateSelect/TeammateSelectScreen';
-import { GameTableScreen } from './components/GameTable/GameTableScreen';
-import { ResultsScreen } from './components/Results/ResultsScreen';
-import { DebugPanel } from './components/Debug/DebugPanel';
-import { GameLog } from './components/Debug/GameLog';
-import { MobileDebugDrawer } from './components/Debug/MobileDebugDrawer';
+import { LobbyScreen } from './components/blind-alliance/Lobby/LobbyScreen';
+import { BiddingScreen } from './components/blind-alliance/Bidding/BiddingScreen';
+import { TrumpSelectScreen } from './components/blind-alliance/TrumpSelect/TrumpSelectScreen';
+import { TeammateSelectScreen } from './components/blind-alliance/TeammateSelect/TeammateSelectScreen';
+import { GameTableScreen } from './components/blind-alliance/GameTable/GameTableScreen';
+import { ResultsScreen } from './components/blind-alliance/Results/ResultsScreen';
+import { DebugPanel } from './components/shared/Debug/DebugPanel';
+import { GameLog } from './components/shared/Debug/GameLog';
+import { MobileDebugDrawer } from './components/shared/Debug/MobileDebugDrawer';
 import { ErrorToast } from './components/shared/ErrorToast';
 import { ReconnectingBanner } from './components/shared/ReconnectingBanner';
 import { GameStartBanner } from './components/shared/GameStartBanner';
@@ -24,7 +24,11 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* Game content — full width on mobile, flex-1 on desktop */}
-        <div className="flex-1 overflow-auto p-3 md:p-4">
+        <div className={`flex-1 min-h-0 ${
+          phase === 'playing' || phase === 'reveal'
+            ? 'overflow-hidden'
+            : 'overflow-auto p-3 md:p-4'
+        }`}>
           {phase === 'lobby' && <LobbyScreen />}
           {phase === 'dealing' && <LobbyScreen />}
           {phase === 'bidding' && <BiddingScreen />}
@@ -35,10 +39,14 @@ export default function App() {
           {phase === 'finished' && <ResultsScreen />}
         </div>
 
-        {/* Desktop sidebar — hidden on mobile */}
-        <div className="hidden md:flex w-80 border-l border-amber-200 flex-col bg-white shadow-inner">
-          <DebugPanel />
-          <GameLog />
+        {/* Desktop sidebar — hidden on mobile, constrained to viewport height */}
+        <div className="hidden md:flex w-80 border-l border-amber-200 flex-col bg-white shadow-inner overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <DebugPanel />
+          </div>
+          <div className="h-[40%] shrink-0 min-h-0">
+            <GameLog />
+          </div>
         </div>
 
       </div>

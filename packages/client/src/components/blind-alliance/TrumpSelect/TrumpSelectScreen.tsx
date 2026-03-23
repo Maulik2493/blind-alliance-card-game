@@ -1,5 +1,5 @@
-import { useGameStore } from '../../store/gameStore';
-import { CardComponent } from '../shared/CardComponent';
+import { useGameStore } from '../../../store/gameStore';
+import { CardComponent } from '../../shared/CardComponent';
 import type { Suit } from '@blind-alliance/core';
 
 const suits: { suit: Suit; symbol: string; color: string; bg: string; hover: string }[] = [

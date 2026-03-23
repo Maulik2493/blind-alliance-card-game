@@ -1,5 +1,5 @@
-import { useGameStore } from '../../store/gameStore';
-import { PhaseLabel } from '../shared/PhaseLabel';
+import { useGameStore } from '../../../store/gameStore';
+import { PhaseLabel } from '../PhaseLabel';
 
 const suitSymbols: Record<string, string> = {
   spades: '♠',
@@ -26,7 +26,7 @@ export function DebugPanel() {
   const currentPlayerIndex = useGameStore((s) => s.currentPlayerIndex);
 
   return (
-    <div className="overflow-y-auto p-3 text-xs font-mono bg-gray-50 space-y-4 flex-1">
+    <div className="p-3 text-xs font-mono bg-gray-50 space-y-4">
       <h2 className="text-sm font-bold text-gray-800">Debug Panel</h2>
 
       {/* 1. GAME INFO */}

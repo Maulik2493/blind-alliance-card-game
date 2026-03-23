@@ -20,7 +20,7 @@ export function handlePlayCard(
 
     room.applyPlayCard(playerId, data.cardId);
 
-    if (room.state.phase === 'finished') {
+    if (room.isGameOver()) {
       broadcastStateUpdate(io, room);
 
       const summary = buildScoreSummary(room.state);

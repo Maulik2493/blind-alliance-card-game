@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
+      '@blind-alliance/core-engine': path.resolve(__dirname, '../core-engine/src/index.ts'),
       '@blind-alliance/core': path.resolve(__dirname, '../core/src/index.ts'),
     },
   },

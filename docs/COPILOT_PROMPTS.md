@@ -4605,3 +4605,627 @@ Render at the bottom of the results screen:
   If it is not already tracked, add it to the store interface,
   initial state (null), and spread it in the state_update handler.
 ```
+# PHASE 15 — Modularize Repo Structure
+
+## Goal
+Refactor the monorepo so the server and client are game-agnostic.
+Blind Alliance plugs in as one game. Future games plug in the same way.
+Zero behaviour changes — the game must work identically after this phase.
+
+## Apply Order
+15.1 → 15.2 → 15.3 → 15.4 → 15.5 → 15.6 → 15.7
+
+---
+
+## Change 15.1 — Create packages/core-engine
+
+```
+Create a new package packages/core-engine that contains only the
+primitives shared across ALL card games. These are extracted from
+the existing packages/core with no logic changes.
+
+── Create packages/core-engine/package.json ─────────────────────────────────
+
+  {
+    "name": "@blind-alliance/core-engine",
+    "version": "1.0.0",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+      "build": "tsc"
+    },
+    "devDependencies": {
+      "typescript": "^5.0.0"
+    }
+  }
+
+── Create packages/core-engine/tsconfig.json ────────────────────────────────
+
+  Copy tsconfig.json from packages/core exactly.
+  Update outDir to "./dist" and rootDir to "./src".
+
+── Create packages/core-engine/src/card.ts ──────────────────────────────────
+
+  Move these from packages/core/src/card.ts with no changes:
+    - Suit type
+    - Rank type
+    - Card interface
+    - getRankValue()
+    - getSuitOrder()
+    - sortHand()
+    - SUIT_SYMBOLS constant (if it exists)
+    - SUIT_COLORS constant (if it exists)
+
+── Create packages/core-engine/src/deck.ts ──────────────────────────────────
+
+  Move these from packages/core/src/deck.ts with no changes:
+    - buildDeck()
+    - shuffleDeck()
+    - DeckConfig interface
+
+── Create packages/core-engine/src/types.ts ─────────────────────────────────
+
+  Create a new file with the base interfaces all games share.
+  These are NOT moved from core — they are newly defined here:
+
+  export interface BasePlayer {
+    id: string
+    name: string
+    isConnected: boolean
+    cardCount: number
+  }
+
+  export interface BaseGameState {
+    roomId: string
+    hostId: string
+    phase: string
+    players: BasePlayer[]
+  }
+
+  export interface BaseClientGameState {
+    roomId: string
+    hostId: string
+    phase: string
+    players: BasePlayer[]
+    myHand: Card[]
+  }
+
+  // The interface every game adapter must implement.
+  // Server only calls methods on this interface — never game-specific code.
+  export interface GameAdapter<
+    TState extends BaseGameState,
+    TClientState extends BaseClientGameState
+  > {
+    // Unique identifier e.g. 'blind-alliance', 'new-game'
+    gameId: string
+
+    // Display name shown in lobby e.g. 'Blind Alliance'
+    gameName: string
+
+    // Initialize fresh game state for a set of players
+    initGame(
+      players: Pick<BasePlayer, 'id' | 'name'>[],
+      options?: Record<string, unknown>
+    ): TState
+
+    // Handle any client event — returns new state
+    // All game-specific events (bid, playCard etc) go through here
+    handleEvent(
+      state: TState,
+      playerId: string,
+      event: string,
+      payload: unknown
+    ): TState
+
+    // Strip hidden info (other players' hands) before sending to client
+    getSanitizedState(state: TState, playerId: string): TClientState
+
+    // Whether game has ended
+    isGameOver(state: TState): boolean
+
+    // Reset to lobby for rematch, preserving players and room metadata
+    resetForRematch(state: TState): TState
+  }
+
+── Create packages/core-engine/src/index.ts ─────────────────────────────────
+
+  Export everything:
+    export * from './card'
+    export * from './deck'
+    export * from './types'
+
+── Add to root package.json workspaces ──────────────────────────────────────
+
+  "workspaces": [
+    "packages/core-engine",
+    "packages/core",
+    "packages/server",
+    "packages/client"
+  ]
+```
+
+---
+
+## Change 15.2 — Update packages/core to extend core-engine
+
+```
+Update packages/core so it imports shared primitives from
+core-engine instead of defining them locally. No logic changes.
+
+── Update packages/core/package.json ────────────────────────────────────────
+
+  Add dependency:
+    "@blind-alliance/core-engine": "*"
+
+── Update packages/core/src/card.ts ─────────────────────────────────────────
+
+  Remove the definitions that were moved to core-engine.
+  Replace with re-exports:
+
+    export {
+      Suit, Rank, Card,
+      getRankValue, getSuitOrder, sortHand
+    } from '@blind-alliance/core-engine'
+
+  Keep any Blind Alliance specific card logic that is NOT in core-engine
+  (e.g. point value calculation specific to Blind Alliance rules).
+
+── Update packages/core/src/deck.ts ─────────────────────────────────────────
+
+  Remove the definitions that were moved to core-engine.
+  Replace with re-exports:
+
+    export { buildDeck, shuffleDeck, DeckConfig } from '@blind-alliance/core-engine'
+
+  Keep any Blind Alliance specific deck logic (e.g. removeBalancingCards).
+
+── Update packages/core/src/index.ts ────────────────────────────────────────
+
+  Add at the top:
+    export * from '@blind-alliance/core-engine'
+
+  This ensures anything importing from @blind-alliance/core still gets
+  all the primitives — no import changes needed elsewhere yet.
+
+── Build and verify ──────────────────────────────────────────────────────────
+
+  Run: npm run build --workspace=packages/core-engine
+  Then: npm run build --workspace=packages/core
+  Both must build with zero errors before proceeding.
+```
+
+---
+
+## Change 15.3 — Create BlindAllianceAdapter
+
+```
+Create packages/server/src/adapters/BlindAllianceAdapter.ts
+
+This wraps all existing Blind Alliance game logic behind the
+GameAdapter interface. The server will call this adapter instead
+of calling core functions directly.
+
+  import {
+    GameAdapter,
+    BasePlayer
+  } from '@blind-alliance/core-engine'
+
+  import {
+    GameState,
+    ClientGameState,
+    initGame,
+    dealCards,
+    placeBid,
+    passBid,
+    selectTrump,
+    setTeammateConditions,
+    playCard,
+    resetForRematch,
+  } from '@blind-alliance/core'
+
+  export class BlindAllianceAdapter
+    implements GameAdapter<GameState, ClientGameState>
+  {
+    gameId = 'blind-alliance'
+    gameName = 'Blind Alliance'
+
+    initGame(
+      players: Pick<BasePlayer, 'id' | 'name'>[],
+      options?: { deckCount?: 1 | 2 }
+    ): GameState {
+      return initGame(players, options?.deckCount ?? 1)
+    }
+
+    handleEvent(
+      state: GameState,
+      playerId: string,
+      event: string,
+      payload: unknown
+    ): GameState {
+      switch (event) {
+        case 'deal_cards':
+          return dealCards(state)
+        case 'place_bid':
+          return placeBid(state, playerId, (payload as any).amount)
+        case 'pass_bid':
+          return passBid(state, playerId)
+        case 'select_trump':
+          return selectTrump(state, playerId, (payload as any).suit)
+        case 'set_conditions':
+          return setTeammateConditions(state, playerId, (payload as any).conditions)
+        case 'play_card':
+          return playCard(state, playerId, (payload as any).cardId)
+        default:
+          throw new Error(`Unknown event: ${event}`)
+      }
+    }
+
+    getSanitizedState(state: GameState, playerId: string): ClientGameState {
+      // Move existing sanitization logic from GameRoom.getSanitizedStateFor()
+      // into here. The logic is identical — just relocated.
+      return getSanitizedStateFor(state, playerId)
+    }
+
+    isGameOver(state: GameState): boolean {
+      return state.phase === 'finished'
+    }
+
+    resetForRematch(state: GameState): GameState {
+      return resetForRematch(state)
+    }
+  }
+
+  // Helper — move the sanitization logic from GameRoom here
+  function getSanitizedStateFor(
+    state: GameState,
+    playerId: string
+  ): ClientGameState {
+    // Copy existing getSanitizedStateFor() implementation from GameRoom.ts
+    // exactly as-is. No logic changes.
+  }
+```
+
+---
+
+## Change 15.4 — Refactor GameRoom to be game-agnostic
+
+```
+Update packages/server/src/GameRoom.ts
+
+GameRoom currently contains Blind Alliance specific logic.
+Refactor it to work with any GameAdapter.
+
+── Update GameRoom class ─────────────────────────────────────────────────────
+
+  import { GameAdapter, BaseGameState, BaseClientGameState } from '@blind-alliance/core-engine'
+
+  export class GameRoom<
+    TState extends BaseGameState,
+    TClientState extends BaseClientGameState
+  > {
+    roomId: string
+    hostId: string
+    adapter: GameAdapter<TState, TClientState>
+    state: TState
+    disconnectedPlayers: Map<string, DisconnectedPlayer> = new Map()
+    RECONNECT_WINDOW_MS = 5 * 60 * 1000
+
+    constructor(
+      roomId: string,
+      hostId: string,
+      adapter: GameAdapter<TState, TClientState>,
+      initialState: TState
+    ) {
+      this.roomId = roomId
+      this.hostId = hostId
+      this.adapter = adapter
+      this.state = initialState
+    }
+
+    // Replace all Blind Alliance specific methods with generic event dispatch
+    applyEvent(playerId: string, event: string, payload: unknown): void {
+      this.state = this.adapter.handleEvent(
+        this.state, playerId, event, payload
+      )
+    }
+
+    getSanitizedStateFor(playerId: string): TClientState {
+      return this.adapter.getSanitizedState(this.state, playerId)
+    }
+
+    isGameOver(): boolean {
+      return this.adapter.isGameOver(this.state)
+    }
+
+    applyRematch(playerId: string): void {
+      if (playerId !== this.state.hostId) {
+        throw new Error('Only the host can start a rematch')
+      }
+      this.state = this.adapter.resetForRematch(this.state)
+    }
+
+    // Keep all reconnection methods unchanged:
+    // markPlayerDisconnected(), allPlayersDisconnected() etc.
+    // These are infrastructure — not game specific.
+  }
+
+── Update all event handlers to use applyEvent ──────────────────────────────
+
+  Update each handler in packages/server/src/events/:
+
+  onBid.ts:
+    FROM: room.applyBid(socket.id, data.amount)
+    TO:   room.applyEvent(socket.id, 'place_bid', { amount: data.amount })
+
+  onPassBid.ts:
+    FROM: room.applyPass(socket.id)
+    TO:   room.applyEvent(socket.id, 'pass_bid', {})
+
+  onTrumpSelect.ts:
+    FROM: room.applyTrumpSelect(socket.id, data.suit)
+    TO:   room.applyEvent(socket.id, 'select_trump', { suit: data.suit })
+
+  onSetConditions.ts:
+    FROM: room.applySetConditions(socket.id, data.conditions)
+    TO:   room.applyEvent(socket.id, 'set_conditions', { conditions: data.conditions })
+
+  onPlayCard.ts:
+    FROM: room.applyPlayCard(socket.id, data.cardId)
+    TO:   room.applyEvent(socket.id, 'play_card', { cardId: data.cardId })
+
+  onStartGame.ts:
+    FROM: room.applyStartGame(socket.id)
+    TO:   room.applyEvent(socket.id, 'deal_cards', {})
+
+  All other logic in each handler (error handling, broadcastStateUpdate)
+  remains exactly the same.
+```
+
+---
+
+## Change 15.5 — Update RoomManager to store adapter per room
+
+```
+Update packages/server/src/RoomManager.ts
+
+RoomManager must know which game adapter to use when creating a room.
+
+  import { BlindAllianceAdapter } from './adapters/BlindAllianceAdapter'
+
+  // Registry of all available game adapters
+  // Add new games here when they are implemented
+  const GAME_ADAPTERS = {
+    'blind-alliance': new BlindAllianceAdapter(),
+  } as const
+
+  export type GameId = keyof typeof GAME_ADAPTERS
+
+  export class RoomManager {
+    private rooms: Map<string, GameRoom<any, any>> = new Map()
+    private playerRoomMap: Map<string, string> = new Map()
+
+    createRoom(
+      hostId: string,
+      hostName: string,
+      gameId: GameId = 'blind-alliance',  // default for backwards compat
+      options?: Record<string, unknown>
+    ): GameRoom<any, any> {
+      const adapter = GAME_ADAPTERS[gameId]
+      if (!adapter) throw new Error(`Unknown game: ${gameId}`)
+
+      const roomId = generateRoomCode()
+      const initialState = adapter.initGame(
+        [{ id: hostId, name: hostName }],
+        options
+      )
+      const room = new GameRoom(roomId, hostId, adapter, initialState)
+      this.rooms.set(roomId, room)
+      this.playerRoomMap.set(hostId, roomId)
+      return room
+    }
+
+    // All other existing methods unchanged:
+    // getRoomById(), getRoomByPlayerId(), destroyRoom() etc.
+  }
+```
+
+---
+
+## Change 15.6 — Reorganize client components by game
+
+```
+Reorganize packages/client/src/components/ into game-specific
+and shared folders. Move files only — zero logic changes.
+
+── New folder structure ──────────────────────────────────────────────────────
+
+  components/
+  ├── shared/                    ← infrastructure, works for any game
+  │   ├── CardComponent.tsx      ← move from components/
+  │   ├── PlayerHand.tsx         ← move from GameTable/
+  │   ├── ErrorToast.tsx
+  │   ├── ReconnectingBanner.tsx
+  │   ├── GameStartBanner.tsx
+  │   └── Debug/
+  │       ├── DebugPanel.tsx
+  │       ├── GameLog.tsx
+  │       └── MobileDebugDrawer.tsx
+  │
+  └── blind-alliance/            ← BA specific screens
+      ├── Lobby/
+      │   └── LobbyScreen.tsx
+      ├── Bidding/
+      │   └── BiddingScreen.tsx
+      ├── TrumpSelect/
+      │   └── TrumpSelectScreen.tsx
+      ├── TeammateSelect/
+      │   └── TeammateSelectScreen.tsx
+      ├── GameTable/
+      │   ├── GameTableScreen.tsx
+      │   └── TrickArea.tsx
+      └── Results/
+          └── ResultsScreen.tsx
+
+── Update all import paths ───────────────────────────────────────────────────
+
+  After moving files, update every import statement that references
+  the old paths. Use your IDE's "Update imports automatically" feature
+  or search for the old paths and replace them.
+
+  Key paths that change:
+    FROM: '../components/CardComponent'
+    TO:   '../components/shared/CardComponent'
+
+    FROM: '../components/GameTable/PlayerHand'
+    TO:   '../components/shared/PlayerHand'
+
+    FROM: '../components/Bidding/BiddingScreen'
+    TO:   '../components/blind-alliance/Bidding/BiddingScreen'
+
+  No component logic changes — only file locations and import paths.
+```
+
+---
+
+## Change 15.7 — Split gameStore into shared and game-specific
+
+```
+Update packages/client/src/
+
+Split the single gameStore.ts into:
+  - sharedStore.ts   — connection state, room metadata, player list
+  - blindAllianceStore.ts  — BA specific state (bids, trump, conditions etc)
+
+── sharedStore.ts ────────────────────────────────────────────────────────────
+
+  Contains state and actions shared by ALL games:
+
+  interface SharedState {
+    // Connection
+    isReconnecting: boolean
+    reconnectAttempt: number
+    lastError: string | null
+    disconnectedPlayers: { playerId: string, playerName: string }[]
+
+    // Room metadata
+    roomId: string | null
+    hostId: string | null
+    gameId: string | null    // which game this room is playing
+
+    // Players
+    myPlayerId: string | null
+    myPlayerName: string | null
+    players: BasePlayer[]
+
+    // Phase — generic string, each game defines its own phases
+    phase: string
+
+    // Actions
+    setPlayerName: (name: string) => void
+    joinRoom: (roomId: string) => void
+    dismissError: () => void
+    requestRematch: () => void
+  }
+
+── blindAllianceStore.ts ─────────────────────────────────────────────────────
+
+  Contains state and actions specific to Blind Alliance:
+
+  interface BlindAllianceState {
+    // Bidding
+    biddingQueue: string[]
+    bids: Bid[]
+    highestBid: Bid | null
+    bidderId: string | null
+
+    // Trump and conditions
+    trumpSuit: Suit | null
+    teammateConditions: TeammateCondition[]
+    maxTeammateCount: number
+
+    // Trick play
+    currentTrick: Trick | null
+    completedTricks: Trick[]
+    currentPlayerIndex: number
+
+    // Scoring
+    bidderTeamTotal: number
+    oppositionTeamTotal: number | null
+
+    // Hand
+    myHand: Card[]
+
+    // Game start info (for banner)
+    gameStartInfo: GameStartInfo | null
+    showGameStartBanner: boolean
+
+    // Actions
+    placeBid: (amount: number) => void
+    passBid: () => void
+    selectTrump: (suit: Suit) => void
+    setConditions: (conditions: TeammateCondition[]) => void
+    playCard: (card: Card) => void
+    isMyTurn: () => boolean
+  }
+
+── Combine in a single useGameStore hook ────────────────────────────────────
+
+  Create packages/client/src/gameStore.ts as a facade that
+  combines both stores so existing component imports don't change:
+
+    import { useSharedStore } from './sharedStore'
+    import { useBlindAllianceStore } from './blindAllianceStore'
+
+    // Combined hook — components use this exactly as before
+    export function useGameStore<T>(
+      selector: (state: SharedState & BlindAllianceState) => T
+    ): T {
+      const shared = useSharedStore()
+      const ba = useBlindAllianceStore()
+      return selector({ ...shared, ...ba })
+    }
+
+  This means ZERO changes needed in any component that calls
+  useGameStore(s => s.someField) — they all continue to work.
+
+── Socket listeners ──────────────────────────────────────────────────────────
+
+  Move socket.on('state_update') listener:
+    - Shared fields (phase, players, roomId etc) → sharedStore
+    - BA specific fields (bids, trumpSuit etc) → blindAllianceStore
+
+  Both stores listen to the same state_update event and each
+  picks out the fields it cares about.
+```
+
+---
+
+## Verify after all changes
+
+```
+After applying all 7 changes, verify the following before
+considering Phase 15 complete:
+
+Build verification:
+  [ ] npm run build --workspace=packages/core-engine  → zero errors
+  [ ] npm run build --workspace=packages/core         → zero errors
+  [ ] npm run build --workspace=packages/server       → zero errors
+  [ ] npm run build --workspace=packages/client       → zero errors
+
+Runtime verification (full game playthrough):
+  [ ] Create a room → lobby shows correctly
+  [ ] Second player joins → both names visible
+  [ ] Start game → cards dealt
+  [ ] Bidding queue works correctly
+  [ ] Trump selection works
+  [ ] Teammate conditions work
+  [ ] Game start banner shows for 10 seconds
+  [ ] Cards play correctly, trick area updates
+  [ ] Trick winner shown
+  [ ] Team totals update dynamically
+  [ ] Results screen shows
+  [ ] Rematch works — returns to lobby
+  [ ] Reconnection works — drop and rejoin mid game
+  [ ] Mobile layout correct on 390px viewport
+  [ ] No console errors throughout
+```

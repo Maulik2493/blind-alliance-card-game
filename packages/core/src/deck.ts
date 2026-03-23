@@ -1,25 +1,13 @@
 import { type Card, type Suit, type Rank, getCardPoints, getRankValue } from './card';
+import { buildDeck as baseBuildDeck, shuffleDeck } from '@blind-alliance/core-engine';
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// Re-export shuffleDeck for external use
+export { shuffleDeck };
 
-const SUITS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
-const RANKS: Rank[] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 'J', 'Q', 'K', 'A'];
-
-// ─── Build a single 52-card deck ─────────────────────────────────────────────
+// ─── Build a single 52-card deck (with BA point values) ──────────────────────
 
 export function buildDeck(deckIndex: 0 | 1): Card[] {
-  const cards: Card[] = [];
-  for (const suit of SUITS) {
-    for (const rank of RANKS) {
-      cards.push({
-        suit,
-        rank,
-        points: getCardPoints(suit, rank),
-        deckIndex,
-      });
-    }
-  }
-  return cards;
+  return baseBuildDeck(deckIndex, getCardPoints);
 }
 
 // ─── Remove balancing cards ──────────────────────────────────────────────────
@@ -55,17 +43,6 @@ export function removeBalancingCards(
   return { remaining, removed };
 }
 
-// ─── Shuffle (Fisher-Yates) ──────────────────────────────────────────────────
-
-function shuffle<T>(array: T[]): T[] {
-  const a = [...array];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j]!, a[i]!];
-  }
-  return a;
-}
-
 // ─── Build complete game deck ────────────────────────────────────────────────
 
 export function buildGameDeck(playerCount: number): { cards: Card[]; removedCards: Card[] } {
@@ -75,7 +52,7 @@ export function buildGameDeck(playerCount: number): { cards: Card[]; removedCard
     allCards = allCards.concat(buildDeck(1));
   }
 
-  const shuffled = shuffle(allCards);
+  const shuffled = shuffleDeck(allCards);
   const { remaining, removed } = removeBalancingCards(shuffled, playerCount);
 
   return { cards: remaining, removedCards: removed };

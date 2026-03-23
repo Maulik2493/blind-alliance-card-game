@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useGameStore } from '../../store/gameStore';
+import { useGameStore } from '../../../store/gameStore';
 import type { Suit } from '@blind-alliance/core';
 
 function suitSymbol(suit: Suit): string {

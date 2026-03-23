@@ -1,25 +1,16 @@
-import type { Card, Suit, Rank, GameState, TeammateCondition } from '@blind-alliance/core';
-import {
-  initGame,
-  addPlayerToLobby,
-  removePlayerFromLobby,
-  dealCards,
-  placeBid,
-  passBid,
-  selectTrump,
-  setTeammateConditions,
-  playCard,
-  getValidCards,
-  getBidderTeamTotal,
-  getOppositionTeamTotal,
-  resetForRematch,
-} from '@blind-alliance/core';
+import type { GameAdapter, BaseGameState, BaseClientGameState } from '@blind-alliance/core-engine';
+import type { GameState } from '@blind-alliance/core';
 import type { PublicPlayer, ClientGameState } from './events';
+import { BlindAllianceAdapter } from './adapters/BlindAllianceAdapter';
+
+// Default adapter instance
+const defaultAdapter = new BlindAllianceAdapter();
 
 export class GameRoom {
   roomId: string;
   hostId: string;
   state: GameState;
+  adapter: GameAdapter<GameState, ClientGameState>;
   playerSocketMap: Map<string, string>; // playerId → socketId
 
   // Reconnection support
@@ -43,24 +34,33 @@ export class GameRoom {
     return socketId; // fallback: socketId IS the playerId (normal case)
   }
 
-  constructor(roomId: string, hostPlayerId: string, hostPlayerName: string) {
+  constructor(
+    roomId: string,
+    hostPlayerId: string,
+    hostPlayerName: string,
+    adapter: GameAdapter<GameState, ClientGameState> = defaultAdapter,
+  ) {
     this.roomId = roomId;
     this.hostId = hostPlayerId;
-    this.state = initGame([hostPlayerName]);
-    // Override the auto-generated id with the actual socket id
-    this.state = {
-      ...this.state,
-      players: this.state.players.map((p) => ({ ...p, id: hostPlayerId })),
-    };
+    this.adapter = adapter;
+    this.state = adapter.initGame([{ id: hostPlayerId, name: hostPlayerName }]);
     this.playerSocketMap = new Map();
     this.playerSocketMap.set(hostPlayerId, hostPlayerId);
   }
+
+  // ─── Generic Event Dispatch ──────────────────────────────────────────────
+
+  applyEvent(playerId: string, event: string, payload: unknown): void {
+    this.state = this.adapter.handleEvent(this.state, playerId, event, payload);
+  }
+
+  // ─── Lobby Management (infrastructure, not game-specific) ────────────────
 
   addPlayer(playerId: string, playerName: string): void {
     if (this.state.phase !== 'lobby') {
       throw new Error('Cannot join — game has already started');
     }
-    this.state = addPlayerToLobby(this.state, playerId, playerName);
+    this.applyEvent(playerId, 'add_player', { playerId, playerName });
     this.playerSocketMap.set(playerId, playerId);
   }
 
@@ -68,7 +68,7 @@ export class GameRoom {
     if (this.state.phase !== 'lobby') {
       throw new Error('Cannot remove players during a game');
     }
-    this.state = removePlayerFromLobby(this.state, playerId);
+    this.applyEvent(playerId, 'remove_player', {});
     this.playerSocketMap.delete(playerId);
   }
 
@@ -79,36 +79,27 @@ export class GameRoom {
     if (this.state.players.length < 3) {
       throw new Error('Need at least 3 players to start');
     }
-    this.state = dealCards(this.state);
-    // Transition from 'dealing' to 'bidding' phase
-    this.state = {
-      ...this.state,
-      phase: 'bidding',
-      biddingQueue: this.state.players.map((p) => p.id),
-      bids: [],
-      highestBid: null,
-      bidderId: null,
-    };
+    this.applyEvent(this.hostId, 'start_game', {});
   }
 
+  // ─── Game Event Methods (delegate to applyEvent) ─────────────────────────
+
   applyBid(playerId: string, amount: number): void {
-    // Core validates queue turn order
-    this.state = placeBid(this.state, playerId, amount);
+    this.applyEvent(playerId, 'place_bid', { amount });
   }
 
   applyPass(playerId: string): void {
-    // Core validates queue turn order
-    this.state = passBid(this.state, playerId);
+    this.applyEvent(playerId, 'pass_bid', {});
   }
 
-  applyTrumpSelect(playerId: string, suit: Suit): void {
+  applyTrumpSelect(playerId: string, suit: string): void {
     if (playerId !== this.state.bidderId) {
       throw new Error('Only the bidder can select trump');
     }
-    this.state = selectTrump(this.state, suit);
+    this.applyEvent(playerId, 'select_trump', { suit });
   }
 
-  applySetConditions(playerId: string, conditions: TeammateCondition[]): void {
+  applySetConditions(playerId: string, conditions: unknown[]): void {
     if (playerId !== this.state.bidderId) {
       throw new Error('Only the bidder can set teammate conditions');
     }
@@ -117,63 +108,22 @@ export class GameRoom {
         `Must set exactly ${this.state.maxTeammateCount} teammate condition(s)`,
       );
     }
-    this.state = setTeammateConditions(this.state, conditions);
+    this.applyEvent(playerId, 'set_conditions', { conditions });
   }
 
   applyPlayCard(playerId: string, cardId: string): void {
-    this.validateCurrentPlayer(playerId);
-
-    const { suit, rank, deckIndex } = parseCardId(cardId);
-    const player = this.state.players.find((p) => p.id === playerId);
-    if (!player) {
-      throw new Error('Player not found');
+    // Validate current player turn
+    const currentPlayer = this.state.players[this.state.currentPlayerIndex];
+    if (!currentPlayer || currentPlayer.id !== playerId) {
+      throw new Error('Not your turn');
     }
-
-    const card = player.hand.find(
-      (c) => c.suit === suit && c.rank === rank && c.deckIndex === deckIndex,
-    );
-    if (!card) {
-      throw new Error('Card not in hand');
-    }
-
-    const ledSuit = this.state.currentTrick?.ledSuit ?? null;
-    const validCards = getValidCards(player.hand, ledSuit, this.state.trumpSuit!);
-    const isValid = validCards.some(
-      (c) => c.suit === card.suit && c.rank === card.rank && c.deckIndex === card.deckIndex,
-    );
-    if (!isValid) {
-      throw new Error('Invalid card play — must follow suit');
-    }
-
-    this.state = playCard(this.state, playerId, card);
+    this.applyEvent(playerId, 'play_card', { cardId });
   }
 
+  // ─── State Access ─────────────────────────────────────────────────────────
+
   getSanitizedStateFor(playerId: string): ClientGameState {
-    const player = this.state.players.find((p) => p.id === playerId);
-    return {
-      phase: this.state.phase,
-      players: this.getPublicPlayers(),
-      myHand: player?.hand ?? [],
-      deckCount: this.state.deckCount,
-      totalPoints: this.state.totalPoints,
-      minBid: this.state.minBid,
-      removedCards: this.state.removedCards,
-      bids: this.state.bids,
-      highestBid: this.state.highestBid,
-      bidderId: this.state.bidderId,
-      trumpSuit: this.state.trumpSuit,
-      teammateConditions: this.state.teammateConditions,
-      maxTeammateCount: this.state.maxTeammateCount,
-      tricks: this.state.tricks,
-      currentTrick: this.state.currentTrick,
-      currentPlayerIndex: this.state.currentPlayerIndex,
-      biddingQueue: this.state.biddingQueue,
-      bidderTeamScore: this.state.bidderTeamScore,
-      oppositionTeamScore: this.state.oppositionTeamScore,
-      bidderTeamTotal: getBidderTeamTotal(this.state),
-      oppositionTeamTotal: getOppositionTeamTotal(this.state),
-      winner: this.state.winner,
-    };
+    return this.adapter.getSanitizedState(this.state, playerId);
   }
 
   getPublicPlayers(): PublicPlayer[] {
@@ -188,6 +138,10 @@ export class GameRoom {
     }));
   }
 
+  isGameOver(): boolean {
+    return this.adapter.isGameOver(this.state);
+  }
+
   applyRematch(playerId: string): void {
     if (playerId !== this.hostId) {
       throw new Error('Only the host can start a rematch');
@@ -200,8 +154,10 @@ export class GameRoom {
       clearTimeout(this.finishedCleanupTimer);
       this.finishedCleanupTimer = null;
     }
-    this.state = resetForRematch(this.state);
+    this.state = this.adapter.resetForRematch(this.state);
   }
+
+  // ─── Reconnection Infrastructure ──────────────────────────────────────────
 
   markPlayerDisconnected(playerId: string): void {
     const player = this.state.players.find((p) => p.id === playerId);
@@ -220,47 +176,4 @@ export class GameRoom {
   allPlayersDisconnected(): boolean {
     return this.state.players.every((p) => !p.isConnected);
   }
-
-  private validateCurrentPlayer(playerId: string): void {
-    const currentPlayer = this.state.players[this.state.currentPlayerIndex];
-    if (!currentPlayer || currentPlayer.id !== playerId) {
-      throw new Error('Not your turn');
-    }
-  }
-}
-
-// ─── Card ID Parsing ─────────────────────────────────────────────────────────
-
-function parseCardId(cardId: string): { suit: Suit; rank: Rank; deckIndex: 0 | 1 } {
-  // Format: "suit-rank-deckIndex" e.g. "spades-A-0" or "hearts-10-1"
-  const parts = cardId.split('-');
-  if (parts.length < 3) {
-    throw new Error(`Invalid cardId format: ${cardId}`);
-  }
-
-  const suit = parts[0] as Suit;
-  const deckIndex = parseInt(parts[parts.length - 1]!, 10) as 0 | 1;
-  // Rank is everything between first and last part (handles "10" which doesn't split)
-  const rankStr = parts.slice(1, -1).join('-');
-
-  const validSuits: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
-  if (!validSuits.includes(suit)) {
-    throw new Error(`Invalid suit: ${suit}`);
-  }
-
-  let rank: Rank;
-  const numRank = parseInt(rankStr, 10);
-  if (!isNaN(numRank) && numRank >= 2 && numRank <= 10) {
-    rank = numRank as Rank;
-  } else if (['J', 'Q', 'K', 'A'].includes(rankStr)) {
-    rank = rankStr as Rank;
-  } else {
-    throw new Error(`Invalid rank: ${rankStr}`);
-  }
-
-  if (deckIndex !== 0 && deckIndex !== 1) {
-    throw new Error(`Invalid deckIndex: ${deckIndex}`);
-  }
-
-  return { suit, rank, deckIndex };
 }

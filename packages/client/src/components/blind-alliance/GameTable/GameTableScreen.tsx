@@ -1,6 +1,6 @@
-import { useGameStore } from '../../store/gameStore';
+import { useGameStore } from '../../../store/gameStore';
 import { TrickArea } from './TrickArea';
-import { PlayerHand } from './PlayerHand';
+import { PlayerHand } from '../../shared/PlayerHand';
 import { TeammateRevealToast } from './TeammateRevealToast';
 
 const suitSymbols: Record<string, string> = {

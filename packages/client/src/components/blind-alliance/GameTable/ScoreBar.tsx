@@ -1,4 +1,4 @@
-import { useGameStore } from '../../store/gameStore';
+import { useGameStore } from '../../../store/gameStore';
 
 export function ScoreBar() {
   const bidderTeamTotal = useGameStore((s) => s.bidderTeamTotal);

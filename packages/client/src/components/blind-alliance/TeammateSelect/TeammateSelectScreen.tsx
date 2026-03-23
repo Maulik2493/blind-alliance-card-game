@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useGameStore } from '../../store/gameStore';
-import { PlayerHand } from '../GameTable/PlayerHand';
+import { useGameStore } from '../../../store/gameStore';
+import { PlayerHand } from '../../shared/PlayerHand';
 import type { Suit, Rank } from '@blind-alliance/core';
 import type { TeammateCondition, CardRevealCondition, FirstTrickWinCondition } from '@blind-alliance/core';
 
