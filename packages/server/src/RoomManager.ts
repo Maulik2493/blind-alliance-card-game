@@ -1,17 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { MAX_PLAYERS } from '@blind-alliance/core';
-import type { GameAdapter } from '@blind-alliance/core-engine';
 import { GameRoom } from './GameRoom';
-import { BlindAllianceAdapter } from './adapters/BlindAllianceAdapter';
-
-// ─── Game Adapter Registry ───────────────────────────────────────────────────
-// Add new games here when they are implemented.
-
-const GAME_ADAPTERS = {
-  'blind-alliance': new BlindAllianceAdapter(),
-} as const;
-
-export type GameId = keyof typeof GAME_ADAPTERS;
+import { getAdapter } from './gameRegistry';
 
 export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map();
@@ -19,11 +9,9 @@ export class RoomManager {
   createRoom(
     hostId: string,
     hostName: string,
-    gameId: GameId = 'blind-alliance',
+    gameId: string = 'blind-alliance',
   ): GameRoom {
-    const adapter = GAME_ADAPTERS[gameId];
-    if (!adapter) throw new Error(`Unknown game: ${gameId}`);
-
+    const { adapter } = getAdapter(gameId); // throws if unknown gameId
     const roomId = uuidv4().substring(0, 6).toUpperCase();
     const room = new GameRoom(roomId, hostId, hostName, adapter);
     this.rooms.set(roomId, room);

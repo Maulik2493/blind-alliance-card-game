@@ -12,6 +12,7 @@ import { handlePlayCard } from './events/onPlayCard';
 import { handleDisconnect } from './events/onDisconnect';
 import { handleRematch } from './events/onRematch';
 import { roomManager } from './RoomManager';
+import { getGameList } from './gameRegistry';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
@@ -27,6 +28,11 @@ app.get('/health', (_req, res) => {
     activeRooms: roomManager.getRoomCount(),
     timestamp: new Date().toISOString(),
   });
+});
+
+// Game list endpoint — client fetches this once on app load
+app.get('/games', (_req, res) => {
+  res.json(getGameList());
 });
 
 const httpServer = createServer(app);

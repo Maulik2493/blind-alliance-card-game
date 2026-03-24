@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useGameStore } from './store/gameStore';
 import { LobbyScreen } from './components/blind-alliance/Lobby/LobbyScreen';
 import { BiddingScreen } from './components/blind-alliance/Bidding/BiddingScreen';
@@ -14,6 +15,11 @@ import { GameStartBanner } from './components/shared/GameStartBanner';
 
 export default function App() {
   const phase = useGameStore((s) => s.phase);
+  const fetchGameList = useGameStore((s) => s.fetchGameList);
+
+  useEffect(() => {
+    fetchGameList();
+  }, [fetchGameList]);
 
   return (
     <div className="min-h-screen bg-amber-50 text-gray-800 flex flex-col">

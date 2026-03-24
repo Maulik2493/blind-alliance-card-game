@@ -41,6 +41,9 @@ export interface ClientGameState {
   bidderTeamTotal: number;
   oppositionTeamTotal: number | null;
   winner: 'bidder_team' | 'opposition_team' | null;
+
+  gameId: string;
+  gameName: string;
 }
 
 // ─── Game Start Info ───────────────────────────────────────────────────────
@@ -61,7 +64,7 @@ export interface GameStartInfo {
 // ─── Client → Server Events ─────────────────────────────────────────────────
 
 export interface ClientToServerEvents {
-  join_room: (data: { playerName: string; roomId?: string }) => void;
+  join_room: (data: { playerName: string; roomId?: string; gameId?: string }) => void;
   start_game: () => void;
   place_bid: (data: { amount: number }) => void;
   pass_bid: () => void;
@@ -74,7 +77,7 @@ export interface ClientToServerEvents {
 // ─── Server → Client Events ─────────────────────────────────────────────────
 
 export interface ServerToClientEvents {
-  room_joined: (data: { roomId: string; playerId: string; players: PublicPlayer[] }) => void;
+  room_joined: (data: { roomId: string; playerId: string; players: PublicPlayer[]; gameId: string; gameName: string }) => void;
   player_joined: (data: { players: PublicPlayer[] }) => void;
   game_started: (data: { hand: Card[]; phase: GamePhase }) => void;
   state_update: (data: { state: ClientGameState }) => void;

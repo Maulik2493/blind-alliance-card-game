@@ -5229,3 +5229,398 @@ Runtime verification (full game playthrough):
   [ ] Mobile layout correct on 390px viewport
   [ ] No console errors throughout
 ```
+# PHASE 16 — Game Picker
+
+## Flow
+1. Player enters their name
+2. Player chooses: Create Room or Join Room
+3. If Create Room → full screen game picker appears
+4. Host selects a game → enters lobby with that game active
+5. Other players join via room code → skip game picker entirely
+6. All players in lobby see which game the host selected
+7. Game proceeds as normal using the selected game's adapter
+
+## Apply Order
+16.1 → 16.2 → 16.3 → 16.4 → 16.5
+
+---
+
+## Change 16.1 — Game registry on server
+
+```
+Create packages/server/src/gameRegistry.ts
+
+Central registry of all available games.
+When adding a new game in the future, only this file needs updating.
+
+  import { BlindAllianceAdapter } from './adapters/BlindAllianceAdapter'
+  import { GameAdapter, BaseGameState, BaseClientGameState } from '@blind-alliance/core-engine'
+
+  export interface GameMeta {
+    gameId: string
+    gameName: string
+    description: string
+    minPlayers: number
+    maxPlayers: number
+    adapter: GameAdapter<any, any>
+  }
+
+  export const GAME_REGISTRY: Record<string, GameMeta> = {
+    'blind-alliance': {
+      gameId: 'blind-alliance',
+      gameName: 'Blind Alliance',
+      description: 'A trick-taking game where the bidder secretly assigns ' +
+                   'teammates using card conditions. Collect enough points ' +
+                   'to meet your bid before your identity is revealed.',
+      minPlayers: 3,
+      maxPlayers: 10,
+      adapter: new BlindAllianceAdapter(),
+    },
+    // Add new games here — server picks up automatically
+  }
+
+  export function getAdapter(gameId: string): GameMeta {
+    const meta = GAME_REGISTRY[gameId]
+    if (!meta) throw new Error(`Unknown game: ${gameId}`)
+    return meta
+  }
+
+  // Serializable game list sent to clients (no adapter instance)
+  export function getGameList(): Omit<GameMeta, 'adapter'>[] {
+    return Object.values(GAME_REGISTRY).map(
+      ({ adapter, ...meta }) => meta
+    )
+  }
+
+Update packages/server/src/RoomManager.ts:
+
+  Import from gameRegistry instead of importing BlindAllianceAdapter directly:
+
+    FROM:
+      import { BlindAllianceAdapter } from './adapters/BlindAllianceAdapter'
+      const GAME_ADAPTERS = { 'blind-alliance': new BlindAllianceAdapter() }
+
+    TO:
+      import { getAdapter } from './gameRegistry'
+
+  Update createRoom():
+
+    createRoom(
+      hostId: string,
+      hostName: string,
+      gameId: string = 'blind-alliance',
+      options?: Record<string, unknown>
+    ): GameRoom<any, any> {
+      const { adapter } = getAdapter(gameId)   // throws if unknown gameId
+      const roomId = generateRoomCode()
+      const initialState = adapter.initGame(
+        [{ id: hostId, name: hostName }],
+        options
+      )
+      const room = new GameRoom(roomId, hostId, adapter, initialState)
+      this.rooms.set(roomId, room)
+      this.playerRoomMap.set(hostId, roomId)
+      return room
+    }
+```
+
+---
+
+## Change 16.2 — Server: send game list and include gameId in room state
+
+```
+── Add game_list endpoint to packages/server/src/index.ts ───────────────────
+
+  Add before io.on('connection'):
+
+    import { getGameList } from './gameRegistry'
+
+    // REST endpoint — client fetches this once on app load
+    // Returns list of available games with metadata
+    app.get('/games', (req, res) => {
+      res.json(getGameList())
+    })
+
+── Update onJoin.ts to accept gameId when creating room ─────────────────────
+
+  Update the join_room event payload type:
+
+    interface JoinRoomPayload {
+      playerName: string
+      roomId?: string       // provided when joining existing room
+      gameId?: string       // provided when creating new room (host only)
+    }
+
+  When roomId is NOT provided (host creating a new room):
+    Use data.gameId ?? 'blind-alliance' when calling roomManager.createRoom()
+
+  When roomId IS provided (player joining existing room):
+    Ignore gameId entirely — game is already set for that room
+
+── Include gameId in sanitized state ────────────────────────────────────────
+
+  In packages/server/src/GameRoom.ts, getSanitizedStateFor():
+
+  Add to the returned ClientGameState:
+    gameId: this.adapter.gameId,
+    gameName: this.adapter.gameName,
+
+  This means every state_update tells the client which game is active.
+```
+
+---
+
+## Change 16.3 — Client: fetch game list and store it
+
+```
+── Update packages/client/src/sharedStore.ts ────────────────────────────────
+
+Add to shared store interface:
+
+  interface GameListItem {
+    gameId: string
+    gameName: string
+    description: string
+    minPlayers: number
+    maxPlayers: number
+  }
+
+  // New state fields
+  gameList: GameListItem[]
+  gameListLoading: boolean
+  activeGameId: string | null      // which game this room is playing
+  activeGameName: string | null
+
+Add to initial state:
+  gameList: [],
+  gameListLoading: false,
+  activeGameId: null,
+  activeGameName: null,
+
+Add fetchGameList action:
+
+  fetchGameList: async () => {
+    set({ gameListLoading: true })
+    try {
+      const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
+      const SECURE_URL = SERVER_URL.startsWith('http://')
+        ? SERVER_URL.replace('http://', 'https://')
+        : SERVER_URL.startsWith('https://')
+        ? SERVER_URL
+        : `https://${SERVER_URL}`
+
+      const url = import.meta.env.DEV ? SERVER_URL : SECURE_URL
+      const res = await fetch(`${url}/games`)
+      const list = await res.json()
+      set({ gameList: list, gameListLoading: false })
+    } catch {
+      set({ gameListLoading: false })
+    }
+  },
+
+Add createRoom action (replaces direct socket.emit in LobbyScreen):
+
+  createRoom: (playerName: string, gameId: string) => {
+    socket.emit('join_room', { playerName, gameId })
+  },
+
+Update state_update handler to store active game:
+  socket.on('state_update', (newState) => {
+    set({
+      ...newState,
+      activeGameId: newState.gameId ?? null,
+      activeGameName: newState.gameName ?? null,
+    })
+  })
+
+Call fetchGameList once when the app loads.
+Add to App.tsx inside a useEffect on mount:
+  useEffect(() => {
+    useSharedStore.getState().fetchGameList()
+  }, [])
+```
+
+---
+
+## Change 16.4 — GamePickerScreen component
+
+```
+Create packages/client/src/components/shared/GamePickerScreen.tsx
+
+Full screen game selection shown only to the host before creating a room.
+Non-hosts never see this screen — they join via room code directly.
+
+── Props ─────────────────────────────────────────────────────────────────────
+
+  interface GamePickerScreenProps {
+    playerName: string
+    onGameSelected: (gameId: string) => void
+    onBack: () => void
+  }
+
+── Data ──────────────────────────────────────────────────────────────────────
+
+  const gameList = useGameStore(s => s.gameList)
+  const gameListLoading = useGameStore(s => s.gameListLoading)
+  const [selectedGameId, setSelectedGameId] = useState<string | null>(null)
+
+── Layout ────────────────────────────────────────────────────────────────────
+
+  <div className="min-h-screen bg-amber-50 flex flex-col">
+
+    {/* Header */}
+    <div className="px-4 pt-6 pb-4 flex items-center gap-3">
+      <button
+        onClick={onBack}
+        className="text-gray-500 hover:text-gray-700 text-xl"
+      >
+        ←
+      </button>
+      <div>
+        <h1 className="text-xl font-bold text-gray-800">Choose a Game</h1>
+        <p className="text-sm text-gray-500">Playing as {playerName}</p>
+      </div>
+    </div>
+
+    {/* Game tiles */}
+    <div className="flex-1 px-4 pb-4 space-y-3 overflow-y-auto">
+
+      { gameListLoading && (
+        <div className="text-center py-12 text-gray-400">
+          Loading games...
+        </div>
+      )}
+
+      { !gameListLoading && gameList.map(game => (
+        <button
+          key={game.gameId}
+          onClick={() => setSelectedGameId(game.gameId)}
+          className={`w-full text-left p-4 rounded-2xl border-2
+                      transition-all active:scale-98 ${
+            selectedGameId === game.gameId
+              ? 'border-amber-400 bg-amber-50 shadow-md'
+              : 'border-gray-200 bg-white shadow-sm'
+          }`}
+        >
+          {/* Game name + selected indicator */}
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-bold text-gray-800 text-base">
+              {game.gameName}
+            </h2>
+            { selectedGameId === game.gameId && (
+              <span className="text-amber-500 text-lg">✓</span>
+            )}
+          </div>
+
+          {/* Description */}
+          <p className="text-sm text-gray-500 leading-relaxed mb-3">
+            {game.description}
+          </p>
+
+          {/* Player count badge */}
+          <div className="flex items-center gap-1">
+            <span className="text-xs bg-gray-100 text-gray-600
+                             px-2 py-1 rounded-full font-medium">
+              👥 {game.minPlayers}–{game.maxPlayers} players
+            </span>
+          </div>
+        </button>
+      ))}
+
+    </div>
+
+    {/* Confirm button — sticky at bottom */}
+    <div className="px-4 py-4 bg-amber-50 border-t border-amber-100">
+      <button
+        onClick={() => selectedGameId && onGameSelected(selectedGameId)}
+        disabled={!selectedGameId}
+        className="w-full py-4 text-base font-bold text-white
+                   bg-amber-500 hover:bg-amber-600 rounded-xl
+                   transition-colors active:scale-95
+                   disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        { selectedGameId
+          ? `Create Room — ${gameList.find(g => g.gameId === selectedGameId)?.gameName}`
+          : 'Select a game to continue'
+        }
+      </button>
+    </div>
+
+  </div>
+```
+
+---
+
+## Change 16.5 — Update LobbyScreen to show game picker for host
+
+```
+Update packages/client/src/components/blind-alliance/Lobby/LobbyScreen.tsx
+
+── Add local UI state ────────────────────────────────────────────────────────
+
+  const [view, setView] = useState<'lobby' | 'game-picker'>('lobby')
+  const [pendingPlayerName, setPendingPlayerName] = useState('')
+  const createRoom = useGameStore(s => s.createRoom)
+  const activeGameName = useGameStore(s => s.activeGameName)
+
+── Update Create Room flow ───────────────────────────────────────────────────
+
+  Currently "Create Room" button directly emits join_room.
+  Change it to show the game picker first:
+
+    FROM:
+      <button onClick={() => socket.emit('join_room', { playerName })}>
+        Create Room
+      </button>
+
+    TO:
+      <button
+        onClick={() => {
+          setPendingPlayerName(playerName)
+          setView('game-picker')
+        }}
+        disabled={!playerName.trim()}
+        className="..."
+      >
+        Create Room
+      </button>
+
+── Render GamePickerScreen when view === 'game-picker' ───────────────────────
+
+  At the top of LobbyScreen return:
+
+    if (view === 'game-picker') {
+      return (
+        <GamePickerScreen
+          playerName={pendingPlayerName}
+          onGameSelected={(gameId) => {
+            createRoom(pendingPlayerName, gameId)
+            setView('lobby')
+          }}
+          onBack={() => setView('lobby')}
+        />
+      )
+    }
+
+── Show active game to non-host players in lobby ─────────────────────────────
+
+  When phase is 'lobby' and myPlayerId !== hostId, show which game
+  is being played so joining players know what they signed up for:
+
+    { activeGameName && myPlayerId !== hostId && (
+      <div className="flex items-center gap-2 bg-amber-100
+                      border border-amber-200 rounded-xl px-4 py-3">
+        <span className="text-amber-600 text-lg">🎮</span>
+        <div>
+          <p className="text-xs text-gray-500">Game selected by host</p>
+          <p className="font-bold text-gray-800">{activeGameName}</p>
+        </div>
+      </div>
+    )}
+
+── Join Room flow — no changes needed ───────────────────────────────────────
+
+  Players joining via room code never see the game picker.
+  They emit join_room with roomId only — server uses the existing
+  room's gameId automatically. No changes to join flow.
+```

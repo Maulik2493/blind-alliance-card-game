@@ -18,7 +18,7 @@ function findDisconnectedPlayer(room: GameRoom, playerName: string) {
 export function handleJoinRoom(
   socket: TypedSocket,
   io: TypedServer,
-  data: { playerName: string; roomId?: string },
+  data: { playerName: string; roomId?: string; gameId?: string },
 ): void {
   try {
     if (data.roomId) {
@@ -73,17 +73,21 @@ export function handleJoinRoom(
         roomId: joinedRoom.roomId,
         playerId: socket.id,
         players: joinedRoom.getPublicPlayers(),
+        gameId: joinedRoom.adapter.gameId,
+        gameName: joinedRoom.adapter.gameName,
       });
       socket.to(joinedRoom.roomId).emit('player_joined', {
         players: joinedRoom.getPublicPlayers(),
       });
     } else {
-      const room = roomManager.createRoom(socket.id, data.playerName);
+      const room = roomManager.createRoom(socket.id, data.playerName, data.gameId);
       socket.join(room.roomId);
       socket.emit('room_joined', {
         roomId: room.roomId,
         playerId: socket.id,
         players: room.getPublicPlayers(),
+        gameId: room.adapter.gameId,
+        gameName: room.adapter.gameName,
       });
     }
   } catch (err) {

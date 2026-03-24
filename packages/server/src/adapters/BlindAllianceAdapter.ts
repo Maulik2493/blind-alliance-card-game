@@ -140,6 +140,8 @@ export class BlindAllianceAdapter
       bidderTeamTotal: getBidderTeamTotal(state),
       oppositionTeamTotal: getOppositionTeamTotal(state),
       winner: state.winner,
+      gameId: this.gameId,
+      gameName: this.gameName,
     };
   }
 

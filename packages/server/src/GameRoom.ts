@@ -123,7 +123,12 @@ export class GameRoom {
   // ─── State Access ─────────────────────────────────────────────────────────
 
   getSanitizedStateFor(playerId: string): ClientGameState {
-    return this.adapter.getSanitizedState(this.state, playerId);
+    const base = this.adapter.getSanitizedState(this.state, playerId);
+    return {
+      ...base,
+      gameId: this.adapter.gameId,
+      gameName: this.adapter.gameName,
+    };
   }
 
   getPublicPlayers(): PublicPlayer[] {

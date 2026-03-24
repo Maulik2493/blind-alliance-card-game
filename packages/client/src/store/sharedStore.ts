@@ -21,6 +21,14 @@ export interface GameLogEntry {
   message: string;
 }
 
+export interface GameListItem {
+  gameId: string;
+  gameName: string;
+  description: string;
+  minPlayers: number;
+  maxPlayers: number;
+}
+
 // ─── Shared State Interface ──────────────────────────────────────────────────
 
 export interface SharedState {
@@ -44,16 +52,24 @@ export interface SharedState {
   // Error + Log
   lastError: string | null;
   gameLog: GameLogEntry[];
+
+  // Game registry
+  gameList: GameListItem[];
+  gameListLoading: boolean;
+  activeGameId: string | null;
+  activeGameName: string | null;
 }
 
 // ─── Shared Actions ──────────────────────────────────────────────────────────
 
 export interface SharedActions {
   connect: (playerName: string, roomId?: string) => void;
+  createRoom: (playerName: string, gameId: string) => void;
   startGame: () => void;
   clearError: () => void;
   clearLog: () => void;
   requestRematch: () => void;
+  fetchGameList: () => Promise<void>;
 }
 
 // ─── Initial Shared State ────────────────────────────────────────────────────
@@ -70,4 +86,8 @@ export const initialSharedState: SharedState = {
   disconnectedPlayers: [],
   lastError: null,
   gameLog: [],
+  gameList: [],
+  gameListLoading: false,
+  activeGameId: null,
+  activeGameName: null,
 };

@@ -6,7 +6,7 @@ import { socket, connectSocket } from '../socket';
 // ─── Re-export types from sub-stores for backward compatibility ──────────────
 // Components that import from gameStore continue to work unchanged.
 
-export type { PublicPlayer, GameLogEntry, SharedState, SharedActions } from './sharedStore';
+export type { PublicPlayer, GameLogEntry, SharedState, SharedActions, GameListItem } from './sharedStore';
 export { initialSharedState } from './sharedStore';
 
 export type { GameStartInfo, BlindAllianceState, BlindAllianceActions } from './blindAllianceStore';
@@ -42,6 +42,8 @@ export interface ClientGameState {
   bidderTeamTotal: number;
   oppositionTeamTotal: number | null;
   winner: 'bidder_team' | 'opposition_team' | null;
+  gameId: string;
+  gameName: string;
 }
 
 // ─── Combined Store Interface ────────────────────────────────────────────────
@@ -105,9 +107,9 @@ export const useGameStore = create<GameStore>((set, get) => {
     addLog('Disconnected from server');
   });
 
-  socket.on('room_joined', ({ roomId, playerId, players }) => {
-    set({ roomId, myPlayerId: playerId, players });
-    addLog(`Joined room ${roomId} as ${playerId}`);
+  socket.on('room_joined', ({ roomId, playerId, players, gameId, gameName }) => {
+    set({ roomId, myPlayerId: playerId, players, activeGameId: gameId ?? null, activeGameName: gameName ?? null });
+    addLog(`Joined room ${roomId} as ${playerId} — game: ${gameName ?? 'unknown'}`);
   });
 
   socket.on('player_joined', ({ players }) => {
@@ -125,6 +127,8 @@ export const useGameStore = create<GameStore>((set, get) => {
     set({
       ...state,
       myHand: sortHand(state.myHand),
+      activeGameId: state.gameId ?? get().activeGameId,
+      activeGameName: state.gameName ?? get().activeGameName,
       // Reset transient UI state when returning to lobby (rematch)
       ...(state.phase === 'lobby' ? {
         gameStartInfo: null,
@@ -230,6 +234,12 @@ export const useGameStore = create<GameStore>((set, get) => {
       socket.emit('join_room', { playerName, roomId: roomId || undefined });
     },
 
+    createRoom: (playerName, gameId) => {
+      set({ myPlayerName: playerName });
+      connectSocket();
+      socket.emit('join_room', { playerName, gameId });
+    },
+
     startGame: () => {
       socket.emit('start_game');
     },
@@ -263,6 +273,20 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     requestRematch: () => {
       socket.emit('rematch');
+    },
+
+    fetchGameList: async () => {
+      set({ gameListLoading: true });
+      try {
+        const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+        const SECURE_URL = SERVER_URL.replace(/^http:\/\//, 'https://');
+        const url = import.meta.env.DEV ? SERVER_URL : SECURE_URL;
+        const res = await fetch(`${url}/games`);
+        const list = await res.json();
+        set({ gameList: list, gameListLoading: false });
+      } catch {
+        set({ gameListLoading: false });
+      }
     },
 
     // ── Selectors ────────────────────────────────────────────────────────
